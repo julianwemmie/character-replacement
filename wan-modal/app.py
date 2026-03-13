@@ -103,17 +103,20 @@ def preprocess(
     video_path: str,
     refer_path: str,
     save_path: str,
+    mode: str = "replace",
     ckpt_path: str | None = None,
 ):
     """
-    Run Wan2.2 preprocessing pipeline for character replacement.
+    Run Wan2.2 preprocessing pipeline.
 
     Args:
         video_path: Path to the driving video (on the io volume or in the repo).
         refer_path: Path to the reference character image.
         save_path: Path to save processed outputs.
+        mode: "replace" for character replacement, "animate" for character animation.
         ckpt_path: Path to process_checkpoint/ dir. Auto-detected from HF cache if None.
     """
+    assert mode in ("replace", "animate"), f"Invalid mode: {mode}. Use 'replace' or 'animate'."
     import glob
     import os
     import subprocess
@@ -201,12 +204,17 @@ def preprocess(
         "--refer_path", refer_path,
         "--save_path", save_path,
         "--resolution_area", "1280", "720",
-        "--iterations", "3",
-        "--k", "7",
-        "--w_len", "1",
-        "--h_len", "1",
-        "--replace_flag",
     ]
+    if mode == "replace":
+        cmd += [
+            "--iterations", "3",
+            "--k", "7",
+            "--w_len", "1",
+            "--h_len", "1",
+            "--replace_flag",
+        ]
+    else:
+        cmd += ["--retarget_flag"]
 
     print(f"\nRunning preprocessing from {preprocess_dir}")
     print(f"Command: {' '.join(cmd)}\n")
@@ -251,6 +259,7 @@ def preprocess(
 def inference(
     src_root_path: str,
     save_file: str,
+    mode: str = "replace",
     video_path: str | None = None,
     ckpt_dir: str | None = None,
     refert_num: int = 1,
@@ -258,17 +267,19 @@ def inference(
     extra_args: list[str] | None = None,
 ):
     """
-    Run Wan2.2 inference for character replacement.
+    Run Wan2.2 inference.
 
     Args:
         src_root_path: Path to preprocessed results directory (contains src_pose.mp4, etc.).
         save_file: Path to save the output video.
+        mode: "replace" for character replacement, "animate" for character animation.
         video_path: Path to original driving video (used to copy audio to output).
         ckpt_dir: Path to model checkpoint dir. Auto-detected from HF cache if None.
         refert_num: Number of reference frames.
         offload_model: Whether to offload model to CPU between steps.
         extra_args: Additional CLI args to pass to generate.py.
     """
+    assert mode in ("replace", "animate"), f"Invalid mode: {mode}. Use 'replace' or 'animate'."
     import glob
     import os
     import subprocess
@@ -291,7 +302,10 @@ def inference(
         print(f"Auto-detected ckpt_dir: {ckpt_dir}")
 
     # Verify preprocessed inputs exist
-    for name in ["src_pose.mp4", "src_face.mp4", "src_bg.mp4", "src_mask.mp4"]:
+    expected_files = ["src_pose.mp4", "src_face.mp4"]
+    if mode == "replace":
+        expected_files += ["src_bg.mp4", "src_mask.mp4"]
+    for name in expected_files:
         fpath = os.path.join(src_root_path, name)
         assert os.path.exists(fpath), f"Missing preprocessed file: {fpath}"
         print(f"  Found: {name}")
@@ -307,13 +321,13 @@ def inference(
         "--src_root_path", src_root_path,
         "--save_file", save_file,
         "--refert_num", str(refert_num),
-        "--replace_flag",
-        "--use_relighting_lora",
         "--dit_fsdp",
         "--t5_fsdp",
-        "--ulysses_size", str(INFERENCE_GPU_COUNT),
         "--offload_model", str(offload_model),
     ]
+    if mode == "replace":
+        cmd += ["--ulysses_size", str(INFERENCE_GPU_COUNT)]
+        cmd += ["--replace_flag", "--use_relighting_lora"]
     if extra_args:
         cmd.extend(extra_args)
 
@@ -411,6 +425,7 @@ def main(
     image: str = "",
     output: str = "output.mp4",
     step: str = "all",
+    mode: str = "replace",
     job_name: str = "default",
     size: str = "1280*720",
     frame_num: int = 0,
@@ -419,13 +434,14 @@ def main(
     offload_model: bool = False,
 ):
     """
-    Wan2.2 character replacement pipeline.
+    Wan2.2 character animation pipeline.
 
     Args:
         video: Local path to driving video (or "example" to use built-in sample).
         image: Local path to reference character image (or "example").
         output: Local path to save the output video.
         step: Which step to run: "preprocess", "inference", or "all" (default).
+        mode: "replace" (swap character in video) or "animate" (animate character from image).
         job_name: Name for this job (used for remote file paths).
         size: Video resolution, e.g. "1280*720".
         frame_num: Number of frames to generate (0 = use model default).
@@ -460,18 +476,19 @@ def main(
     # --- Preprocess ---
     if run_preprocess:
         if use_example:
-            examples_dir = f"{WAN_REPO_PATH}/examples/wan_animate/replace"
+            examples_dir = f"{WAN_REPO_PATH}/examples/wan_animate/{mode}"
             video_path = f"{examples_dir}/video.mp4"
             refer_path = f"{examples_dir}/image.jpeg"
         else:
             video_path = f"{remote_job_dir}/input_video.mp4"
             refer_path = f"{remote_job_dir}/input_image.png"
 
-        print("Starting preprocessing...")
+        print(f"Starting preprocessing (mode={mode})...")
         preprocess.remote(
             video_path=video_path,
             refer_path=refer_path,
             save_path=remote_preprocess_path,
+            mode=mode,
         )
 
     # --- Inference ---
@@ -487,15 +504,16 @@ def main(
 
         # Resolve the driving video path for audio muxing
         if use_example:
-            examples_dir = f"{WAN_REPO_PATH}/examples/wan_animate/replace"
+            examples_dir = f"{WAN_REPO_PATH}/examples/wan_animate/{mode}"
             inference_video_path = f"{examples_dir}/video.mp4"
         else:
             inference_video_path = f"{remote_job_dir}/input_video.mp4"
 
-        print("Starting inference...")
+        print(f"Starting inference (mode={mode})...")
         inference.remote(
             src_root_path=remote_preprocess_path,
             save_file=remote_output_path,
+            mode=mode,
             video_path=inference_video_path,
             refert_num=refert_num,
             offload_model=offload_model,

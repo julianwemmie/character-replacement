@@ -6,7 +6,8 @@ IO_VOLUME_NAME = "wan-io"
 HF_CACHE_PATH = "/root/.cache/huggingface"
 IO_PATH = "/root/io"
 WAN_REPO_PATH = "/root/Wan2.2"
-GPU = "H100"
+GPU = "H200"
+INFERENCE_GPU_COUNT = 8  # number of GPUs for inference (torchrun + FSDP)
 
 app = modal.App("wan-character-replacement")
 
@@ -243,13 +244,14 @@ def preprocess(
 
 @app.function(
     image=wan_image,
-    gpu=GPU,
+    gpu=f"{GPU}:{INFERENCE_GPU_COUNT}",
     volumes={HF_CACHE_PATH: volume, IO_PATH: io_volume},
     timeout=3600,  # 1 hour — inference on 14B model can be slow
 )
 def inference(
     src_root_path: str,
     save_file: str,
+    video_path: str | None = None,
     ckpt_dir: str | None = None,
     refert_num: int = 1,
     offload_model: bool = False,
@@ -261,6 +263,7 @@ def inference(
     Args:
         src_root_path: Path to preprocessed results directory (contains src_pose.mp4, etc.).
         save_file: Path to save the output video.
+        video_path: Path to original driving video (used to copy audio to output).
         ckpt_dir: Path to model checkpoint dir. Auto-detected from HF cache if None.
         refert_num: Number of reference frames.
         offload_model: Whether to offload model to CPU between steps.
@@ -296,7 +299,9 @@ def inference(
     os.makedirs(os.path.dirname(save_file), exist_ok=True)
 
     cmd = [
-        "python", "generate.py",
+        "torchrun",
+        f"--nproc_per_node={INFERENCE_GPU_COUNT}",
+        "generate.py",
         "--task", "animate-14B",
         "--ckpt_dir", ckpt_dir,
         "--src_root_path", src_root_path,
@@ -304,6 +309,9 @@ def inference(
         "--refert_num", str(refert_num),
         "--replace_flag",
         "--use_relighting_lora",
+        "--dit_fsdp",
+        "--t5_fsdp",
+        "--ulysses_size", str(INFERENCE_GPU_COUNT),
         "--offload_model", str(offload_model),
     ]
     if extra_args:
@@ -329,6 +337,31 @@ def inference(
         raise RuntimeError(
             f"generate.py failed with exit code {returncode}"
         )
+
+    # Mux audio from the original driving video onto the generated output
+    if os.path.exists(save_file) and video_path and os.path.exists(video_path):
+        tmp_file = save_file + ".noaudio.mp4"
+        os.rename(save_file, tmp_file)
+        mux_cmd = [
+            "ffmpeg", "-y",
+            "-i", tmp_file,
+            "-i", video_path,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-map", "0:v:0",
+            "-map", "1:a:0?",
+            "-shortest",
+            save_file,
+        ]
+        print(f"\nMuxing audio from {video_path}")
+        mux_result = subprocess.run(mux_cmd, capture_output=True, text=True)
+        if mux_result.returncode == 0:
+            os.remove(tmp_file)
+            print("Audio muxed successfully.")
+        else:
+            # Fall back to video-only output if audio mux fails
+            print(f"Audio mux failed: {mux_result.stderr}")
+            os.rename(tmp_file, save_file)
 
     if os.path.exists(save_file):
         size_mb = os.path.getsize(save_file) / (1024 * 1024)
@@ -452,10 +485,18 @@ def main(
         if sample_steps > 0:
             extra_args += ["--sample_steps", str(sample_steps)]
 
+        # Resolve the driving video path for audio muxing
+        if use_example:
+            examples_dir = f"{WAN_REPO_PATH}/examples/wan_animate/replace"
+            inference_video_path = f"{examples_dir}/video.mp4"
+        else:
+            inference_video_path = f"{remote_job_dir}/input_video.mp4"
+
         print("Starting inference...")
         inference.remote(
             src_root_path=remote_preprocess_path,
             save_file=remote_output_path,
+            video_path=inference_video_path,
             refert_num=refert_num,
             offload_model=offload_model,
             extra_args=extra_args,

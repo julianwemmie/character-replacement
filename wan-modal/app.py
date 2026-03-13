@@ -65,6 +65,10 @@ wan_image = (
     )
     .pip_install("onnxruntime-gpu")  # override CPU-only onnxruntime with CUDA support
     .pip_install("moviepy", "hydra-core", "omegaconf", "librosa")
+    # Patch Wan2.2 to fix Ulysses sequence parallelism with face adapter
+    # (see https://github.com/Wan-Video/Wan2.2/issues/178)
+    .add_local_file("wan-modal/patches/fix_ulysses_animate.py", "/root/fix_ulysses_animate.py", copy=True)
+    .run_commands("python /root/fix_ulysses_animate.py")
 )
 
 
@@ -105,6 +109,8 @@ def preprocess(
     save_path: str,
     mode: str = "replace",
     ckpt_path: str | None = None,
+    mask_w_len: int = 10,
+    mask_h_len: int = 20,
 ):
     """
     Run Wan2.2 preprocessing pipeline.
@@ -115,6 +121,8 @@ def preprocess(
         save_path: Path to save processed outputs.
         mode: "replace" for character replacement, "animate" for character animation.
         ckpt_path: Path to process_checkpoint/ dir. Auto-detected from HF cache if None.
+        mask_w_len: Horizontal grid divisions for mask augmentation (higher = finer mask).
+        mask_h_len: Vertical grid divisions for mask augmentation (higher = finer mask).
     """
     assert mode in ("replace", "animate"), f"Invalid mode: {mode}. Use 'replace' or 'animate'."
     import glob
@@ -209,8 +217,8 @@ def preprocess(
         cmd += [
             "--iterations", "3",
             "--k", "7",
-            "--w_len", "1",
-            "--h_len", "1",
+            "--w_len", str(mask_w_len),
+            "--h_len", str(mask_h_len),
             "--replace_flag",
         ]
     else:
@@ -325,8 +333,8 @@ def inference(
         "--t5_fsdp",
         "--offload_model", str(offload_model),
     ]
+    cmd += ["--ulysses_size", str(INFERENCE_GPU_COUNT)]
     if mode == "replace":
-        cmd += ["--ulysses_size", str(INFERENCE_GPU_COUNT)]
         cmd += ["--replace_flag", "--use_relighting_lora"]
     if extra_args:
         cmd.extend(extra_args)
@@ -432,6 +440,8 @@ def main(
     sample_steps: int = 0,
     refert_num: int = 1,
     offload_model: bool = False,
+    mask_w_len: int = 10,
+    mask_h_len: int = 20,
 ):
     """
     Wan2.2 character animation pipeline.
@@ -448,6 +458,8 @@ def main(
         sample_steps: Number of denoising steps (0 = use model default of 20).
         refert_num: Number of reference frames (default 1).
         offload_model: Offload model to CPU between steps to save VRAM.
+        mask_w_len: Horizontal grid divisions for mask augmentation (higher = finer mask).
+        mask_h_len: Vertical grid divisions for mask augmentation (higher = finer mask).
     """
     import os
 
@@ -489,6 +501,8 @@ def main(
             refer_path=refer_path,
             save_path=remote_preprocess_path,
             mode=mode,
+            mask_w_len=mask_w_len,
+            mask_h_len=mask_h_len,
         )
 
     # --- Inference ---

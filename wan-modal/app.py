@@ -6,6 +6,7 @@ IO_VOLUME_NAME = "wan-io"
 HF_CACHE_PATH = "/root/.cache/huggingface"
 IO_PATH = "/root/io"
 WAN_REPO_PATH = "/root/Wan2.2"
+GPU = "H100"
 
 app = modal.App("wan-character-replacement")
 
@@ -93,7 +94,7 @@ def download_model():
 
 @app.function(
     image=wan_image,
-    gpu="A100-80GB",
+    gpu=GPU,
     volumes={HF_CACHE_PATH: volume, IO_PATH: io_volume},
     timeout=1800,  # 30 minutes
 )
@@ -242,7 +243,7 @@ def preprocess(
 
 @app.function(
     image=wan_image,
-    gpu="A100-80GB",
+    gpu=GPU,
     volumes={HF_CACHE_PATH: volume, IO_PATH: io_volume},
     timeout=3600,  # 1 hour — inference on 14B model can be slow
 )
@@ -250,6 +251,9 @@ def inference(
     src_root_path: str,
     save_file: str,
     ckpt_dir: str | None = None,
+    refert_num: int = 1,
+    offload_model: bool = False,
+    extra_args: list[str] | None = None,
 ):
     """
     Run Wan2.2 inference for character replacement.
@@ -258,6 +262,9 @@ def inference(
         src_root_path: Path to preprocessed results directory (contains src_pose.mp4, etc.).
         save_file: Path to save the output video.
         ckpt_dir: Path to model checkpoint dir. Auto-detected from HF cache if None.
+        refert_num: Number of reference frames.
+        offload_model: Whether to offload model to CPU between steps.
+        extra_args: Additional CLI args to pass to generate.py.
     """
     import glob
     import os
@@ -294,11 +301,13 @@ def inference(
         "--ckpt_dir", ckpt_dir,
         "--src_root_path", src_root_path,
         "--save_file", save_file,
-        "--refert_num", "1",
+        "--refert_num", str(refert_num),
         "--replace_flag",
         "--use_relighting_lora",
-        "--offload_model", "False",
+        "--offload_model", str(offload_model),
     ]
+    if extra_args:
+        cmd.extend(extra_args)
 
     print(f"\nRunning inference from {WAN_REPO_PATH}")
     print(f"Command: {' '.join(cmd)}\n")
@@ -338,24 +347,123 @@ def inference(
     print("\nInference complete. Results committed to io volume.")
 
 
+@app.function(
+    volumes={IO_PATH: io_volume},
+    timeout=600,
+)
+def upload_file(local_bytes: bytes, remote_path: str):
+    """Upload a file to the IO volume."""
+    import os
+
+    os.makedirs(os.path.dirname(remote_path), exist_ok=True)
+    with open(remote_path, "wb") as f:
+        f.write(local_bytes)
+    io_volume.commit()
+    print(f"Uploaded to {remote_path} ({len(local_bytes) / (1024*1024):.1f} MB)")
+
+
+@app.function(
+    volumes={IO_PATH: io_volume},
+    timeout=600,
+)
+def download_file(remote_path: str) -> bytes:
+    """Download a file from the IO volume."""
+    with open(remote_path, "rb") as f:
+        return f.read()
+
+
 @app.local_entrypoint()
-def main():
-    # Use example files from the Wan2.2 repo (baked into the image)
-    examples_dir = f"{WAN_REPO_PATH}/examples/wan_animate/replace"
-    video_path = f"{examples_dir}/video.mp4"
-    refer_path = f"{examples_dir}/image.jpeg"
-    preprocess_path = f"{IO_PATH}/preprocess_results"
-    output_path = f"{IO_PATH}/output.mp4"
+def main(
+    video: str = "",
+    image: str = "",
+    output: str = "output.mp4",
+    step: str = "all",
+    job_name: str = "default",
+    size: str = "1280*720",
+    frame_num: int = 0,
+    sample_steps: int = 0,
+    refert_num: int = 1,
+    offload_model: bool = False,
+):
+    """
+    Wan2.2 character replacement pipeline.
 
-    print("Starting preprocessing with sample inputs...")
-    preprocess.remote(
-        video_path=video_path,
-        refer_path=refer_path,
-        save_path=preprocess_path,
-    )
+    Args:
+        video: Local path to driving video (or "example" to use built-in sample).
+        image: Local path to reference character image (or "example").
+        output: Local path to save the output video.
+        step: Which step to run: "preprocess", "inference", or "all" (default).
+        job_name: Name for this job (used for remote file paths).
+        size: Video resolution, e.g. "1280*720".
+        frame_num: Number of frames to generate (0 = use model default).
+        sample_steps: Number of denoising steps (0 = use model default of 20).
+        refert_num: Number of reference frames (default 1).
+        offload_model: Offload model to CPU between steps to save VRAM.
+    """
+    import os
 
-    print("Starting inference...")
-    inference.remote(
-        src_root_path=preprocess_path,
-        save_file=output_path,
-    )
+    remote_job_dir = f"{IO_PATH}/jobs/{job_name}"
+    remote_preprocess_path = f"{remote_job_dir}/preprocess_results"
+    remote_output_path = f"{remote_job_dir}/output.mp4"
+
+    use_example = video == "example" or (video == "" and image == "")
+
+    run_preprocess = step in ("all", "preprocess")
+    run_inference = step in ("all", "inference")
+
+    # --- Upload inputs ---
+    if run_preprocess and not use_example:
+        assert os.path.exists(video), f"Video file not found: {video}"
+        assert os.path.exists(image), f"Image file not found: {image}"
+
+        print(f"Uploading video: {video}")
+        with open(video, "rb") as f:
+            upload_file.remote(f.read(), f"{remote_job_dir}/input_video.mp4")
+
+        print(f"Uploading image: {image}")
+        with open(image, "rb") as f:
+            upload_file.remote(f.read(), f"{remote_job_dir}/input_image.png")
+
+    # --- Preprocess ---
+    if run_preprocess:
+        if use_example:
+            examples_dir = f"{WAN_REPO_PATH}/examples/wan_animate/replace"
+            video_path = f"{examples_dir}/video.mp4"
+            refer_path = f"{examples_dir}/image.jpeg"
+        else:
+            video_path = f"{remote_job_dir}/input_video.mp4"
+            refer_path = f"{remote_job_dir}/input_image.png"
+
+        print("Starting preprocessing...")
+        preprocess.remote(
+            video_path=video_path,
+            refer_path=refer_path,
+            save_path=remote_preprocess_path,
+        )
+
+    # --- Inference ---
+    if run_inference:
+        # Build extra args for generate.py
+        extra_args = []
+        if size != "1280*720":
+            extra_args += ["--size", size]
+        if frame_num > 0:
+            extra_args += ["--frame_num", str(frame_num)]
+        if sample_steps > 0:
+            extra_args += ["--sample_steps", str(sample_steps)]
+
+        print("Starting inference...")
+        inference.remote(
+            src_root_path=remote_preprocess_path,
+            save_file=remote_output_path,
+            refert_num=refert_num,
+            offload_model=offload_model,
+            extra_args=extra_args,
+        )
+
+        # Download output
+        print(f"Downloading output to {output}...")
+        data = download_file.remote(remote_output_path)
+        with open(output, "wb") as f:
+            f.write(data)
+        print(f"Saved: {output} ({len(data) / (1024*1024):.1f} MB)")

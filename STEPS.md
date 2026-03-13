@@ -23,9 +23,9 @@ Wire up preprocess_data.py as a Modal function. Run replacement mode on sample i
 ## Step 5 — Inference
 Wire up generate.py as a Modal function. Run replacement mode with relighting LoRA on A100-80GB.
 **Test**: Final output video is produced. Download and watch — reference character appears in the source scene.
-- [ ] Done
+- [X] Done
 
 ## Step 6 — CLI entrypoint
 Chain preprocess → inference in a single `run.py` command. Upload inputs, download output.
 **Test**: End-to-end run from local machine with a single command.
-- [ ] Done
+- [X] Done

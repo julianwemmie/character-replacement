@@ -99,7 +99,7 @@ def download_model():
 
 @app.function(
     image=wan_image,
-    gpu=GPU,
+    gpu="A10G",
     volumes={HF_CACHE_PATH: volume, IO_PATH: io_volume},
     timeout=1800,  # 30 minutes
 )
@@ -258,148 +258,152 @@ def preprocess(
     print("\nPreprocessing complete. Results committed to io volume.")
 
 
-@app.function(
+@app.cls(
     image=wan_image,
     gpu=f"{GPU}:{INFERENCE_GPU_COUNT}",
     volumes={HF_CACHE_PATH: volume, IO_PATH: io_volume},
     timeout=3600,  # 1 hour — inference on 14B model can be slow
+    scaledown_window=20,  # keep low during testing; increase for production traffic
 )
-def inference(
-    src_root_path: str,
-    save_file: str,
-    mode: str = "replace",
-    video_path: str | None = None,
-    ckpt_dir: str | None = None,
-    refert_num: int = 1,
-    offload_model: bool = False,
-    extra_args: list[str] | None = None,
-):
-    """
-    Run Wan2.2 inference.
+class InferenceRunner:
+    @modal.method()
+    def run(
+        self,
+        src_root_path: str,
+        save_file: str,
+        mode: str = "replace",
+        video_path: str | None = None,
+        ckpt_dir: str | None = None,
+        refert_num: int = 1,
+        offload_model: bool = False,
+        extra_args: list[str] | None = None,
+    ):
+        """
+        Run Wan2.2 inference.
 
-    Args:
-        src_root_path: Path to preprocessed results directory (contains src_pose.mp4, etc.).
-        save_file: Path to save the output video.
-        mode: "replace" for character replacement, "animate" for character animation.
-        video_path: Path to original driving video (used to copy audio to output).
-        ckpt_dir: Path to model checkpoint dir. Auto-detected from HF cache if None.
-        refert_num: Number of reference frames.
-        offload_model: Whether to offload model to CPU between steps.
-        extra_args: Additional CLI args to pass to generate.py.
-    """
-    assert mode in ("replace", "animate"), f"Invalid mode: {mode}. Use 'replace' or 'animate'."
-    import glob
-    import os
-    import subprocess
+        Args:
+            src_root_path: Path to preprocessed results directory (contains src_pose.mp4, etc.).
+            save_file: Path to save the output video.
+            mode: "replace" for character replacement, "animate" for character animation.
+            video_path: Path to original driving video (used to copy audio to output).
+            ckpt_dir: Path to model checkpoint dir. Auto-detected from HF cache if None.
+            refert_num: Number of reference frames.
+            offload_model: Whether to offload model to CPU between steps.
+            extra_args: Additional CLI args to pass to generate.py.
+        """
+        io_volume.reload()
+        assert mode in ("replace", "animate"), f"Invalid mode: {mode}. Use 'replace' or 'animate'."
+        import glob
+        import os
+        import subprocess
 
-    # --- Locate model checkpoint inside the HF cache ---
-    if ckpt_dir is None:
-        pattern = os.path.join(
-            HF_CACHE_PATH,
-            "hub",
-            "models--Wan-AI--Wan2.2-Animate-14B",
-            "snapshots",
-            "*",
-        )
-        matches = glob.glob(pattern)
-        assert matches, (
-            f"Model checkpoint not found at {pattern}. "
-            "Run download_model first."
-        )
-        ckpt_dir = matches[0]
-        print(f"Auto-detected ckpt_dir: {ckpt_dir}")
+        # --- Locate model checkpoint inside the HF cache ---
+        if ckpt_dir is None:
+            pattern = os.path.join(
+                HF_CACHE_PATH,
+                "hub",
+                "models--Wan-AI--Wan2.2-Animate-14B",
+                "snapshots",
+                "*",
+            )
+            matches = glob.glob(pattern)
+            assert matches, (
+                f"Model checkpoint not found at {pattern}. "
+                "Run download_model first."
+            )
+            ckpt_dir = matches[0]
+            print(f"Auto-detected ckpt_dir: {ckpt_dir}")
 
-    # Verify preprocessed inputs exist
-    expected_files = ["src_pose.mp4", "src_face.mp4"]
-    if mode == "replace":
-        expected_files += ["src_bg.mp4", "src_mask.mp4"]
-    for name in expected_files:
-        fpath = os.path.join(src_root_path, name)
-        assert os.path.exists(fpath), f"Missing preprocessed file: {fpath}"
-        print(f"  Found: {name}")
+        # Verify preprocessed inputs exist
+        expected_files = ["src_pose.mp4", "src_face.mp4"]
+        if mode == "replace":
+            expected_files += ["src_bg.mp4", "src_mask.mp4"]
+        for name in expected_files:
+            fpath = os.path.join(src_root_path, name)
+            assert os.path.exists(fpath), f"Missing preprocessed file: {fpath}"
+            print(f"  Found: {name}")
 
-    os.makedirs(os.path.dirname(save_file), exist_ok=True)
+        os.makedirs(os.path.dirname(save_file), exist_ok=True)
 
-    cmd = [
-        "torchrun",
-        f"--nproc_per_node={INFERENCE_GPU_COUNT}",
-        "generate.py",
-        "--task", "animate-14B",
-        "--ckpt_dir", ckpt_dir,
-        "--src_root_path", src_root_path,
-        "--save_file", save_file,
-        "--refert_num", str(refert_num),
-        "--dit_fsdp",
-        "--t5_fsdp",
-        "--offload_model", str(offload_model),
-    ]
-    cmd += ["--ulysses_size", str(INFERENCE_GPU_COUNT)]
-    if mode == "replace":
-        cmd += ["--replace_flag", "--use_relighting_lora"]
-    if extra_args:
-        cmd.extend(extra_args)
-
-    print(f"\nRunning inference from {WAN_REPO_PATH}")
-    print(f"Command: {' '.join(cmd)}\n")
-
-    process = subprocess.Popen(
-        cmd,
-        cwd=WAN_REPO_PATH,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-
-    for line in process.stdout:
-        print(line, end="")
-
-    returncode = process.wait()
-
-    if returncode != 0:
-        raise RuntimeError(
-            f"generate.py failed with exit code {returncode}"
-        )
-
-    # Mux audio from the original driving video onto the generated output
-    if os.path.exists(save_file) and video_path and os.path.exists(video_path):
-        tmp_file = save_file + ".noaudio.mp4"
-        os.rename(save_file, tmp_file)
-        mux_cmd = [
-            "ffmpeg", "-y",
-            "-i", tmp_file,
-            "-i", video_path,
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-map", "0:v:0",
-            "-map", "1:a:0?",
-            "-shortest",
-            save_file,
+        cmd = [
+            "torchrun",
+            f"--nproc_per_node={INFERENCE_GPU_COUNT}",
+            "generate.py",
+            "--task", "animate-14B",
+            "--ckpt_dir", ckpt_dir,
+            "--src_root_path", src_root_path,
+            "--save_file", save_file,
+            "--refert_num", str(refert_num),
+            "--dit_fsdp",
+            "--offload_model", str(offload_model),
         ]
-        print(f"\nMuxing audio from {video_path}")
-        mux_result = subprocess.run(mux_cmd, capture_output=True, text=True)
-        if mux_result.returncode == 0:
-            os.remove(tmp_file)
-            print("Audio muxed successfully.")
+        cmd += ["--ulysses_size", str(INFERENCE_GPU_COUNT)]
+        if mode == "replace":
+            cmd += ["--replace_flag", "--use_relighting_lora"]
+        if extra_args:
+            cmd.extend(extra_args)
+
+        print(f"\nRunning inference from {WAN_REPO_PATH}")
+        print(f"Command: {' '.join(cmd)}\n")
+
+        process = subprocess.Popen(
+            cmd,
+            cwd=WAN_REPO_PATH,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+
+        for line in process.stdout:
+            print(line, end="")
+
+        returncode = process.wait()
+
+        if returncode != 0:
+            raise RuntimeError(
+                f"generate.py failed with exit code {returncode}"
+            )
+
+        # Mux audio from the original driving video onto the generated output
+        if os.path.exists(save_file) and video_path and os.path.exists(video_path):
+            tmp_file = save_file + ".noaudio.mp4"
+            os.rename(save_file, tmp_file)
+            mux_cmd = [
+                "ffmpeg", "-y",
+                "-i", tmp_file,
+                "-i", video_path,
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-map", "0:v:0",
+                "-map", "1:a:0?",
+                "-shortest",
+                save_file,
+            ]
+            print(f"\nMuxing audio from {video_path}")
+            mux_result = subprocess.run(mux_cmd, capture_output=True, text=True)
+            if mux_result.returncode == 0:
+                os.remove(tmp_file)
+                print("Audio muxed successfully.")
+            else:
+                # Fall back to video-only output if audio mux fails
+                print(f"Audio mux failed: {mux_result.stderr}")
+                os.rename(tmp_file, save_file)
+
+        if os.path.exists(save_file):
+            size_mb = os.path.getsize(save_file) / (1024 * 1024)
+            print(f"\nOutput video: {save_file} ({size_mb:.1f} MB)")
         else:
-            # Fall back to video-only output if audio mux fails
-            print(f"Audio mux failed: {mux_result.stderr}")
-            os.rename(tmp_file, save_file)
+            # generate.py may save with a default name — list output dir
+            out_dir = os.path.dirname(save_file)
+            print(f"\nExpected output not found at {save_file}")
+            print(f"Files in {out_dir}:")
+            for f in sorted(os.listdir(out_dir)):
+                fpath = os.path.join(out_dir, f)
+                size_mb = os.path.getsize(fpath) / (1024 * 1024)
+                print(f"  {f}  ({size_mb:.1f} MB)")
 
-    if os.path.exists(save_file):
-        size_mb = os.path.getsize(save_file) / (1024 * 1024)
-        print(f"\nOutput video: {save_file} ({size_mb:.1f} MB)")
-    else:
-        # generate.py may save with a default name — list output dir
-        out_dir = os.path.dirname(save_file)
-        print(f"\nExpected output not found at {save_file}")
-        print(f"Files in {out_dir}:")
-        for f in sorted(os.listdir(out_dir)):
-            fpath = os.path.join(out_dir, f)
-            size_mb = os.path.getsize(fpath) / (1024 * 1024)
-            print(f"  {f}  ({size_mb:.1f} MB)")
-
-    io_volume.commit()
-    print("\nInference complete. Results committed to io volume.")
+        io_volume.commit()
+        print("\nInference complete. Results committed to io volume.")
 
 
 @app.function(
@@ -437,7 +441,7 @@ def main(
     job_name: str = "default",
     size: str = "1280*720",
     frame_num: int = 0,
-    sample_steps: int = 0,
+    sample_steps: int = 15,
     refert_num: int = 1,
     offload_model: bool = False,
     mask_w_len: int = 10,
@@ -524,7 +528,7 @@ def main(
             inference_video_path = f"{remote_job_dir}/input_video.mp4"
 
         print(f"Starting inference (mode={mode})...")
-        inference.remote(
+        InferenceRunner().run.remote(
             src_root_path=remote_preprocess_path,
             save_file=remote_output_path,
             mode=mode,

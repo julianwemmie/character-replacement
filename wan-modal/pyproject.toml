@@ -1,0 +1,10 @@
+[project]
+name = "wan-modal"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "huggingface-hub>=1.6.0",
+    "modal>=1.3.5",
+]

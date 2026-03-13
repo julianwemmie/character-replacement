@@ -62,7 +62,7 @@ wan_image = (
         " && PIP_CONSTRAINT=/tmp/constraints.txt pip install -r requirements_animate.txt",
     )
     .pip_install("onnxruntime-gpu")  # override CPU-only onnxruntime with CUDA support
-    .pip_install("moviepy", "hydra-core", "omegaconf")
+    .pip_install("moviepy", "hydra-core", "omegaconf", "librosa")
 )
 
 
@@ -89,57 +89,6 @@ def download_model():
     # Commit the volume so files persist
     volume.commit()
     print("Download complete and volume committed.")
-
-
-@app.function(
-    image=wan_image,
-    gpu="A100-80GB",
-    timeout=600,
-)
-def test_imports():
-    """Verify that all Wan2.2 dependencies import correctly on a GPU container."""
-    import torch
-
-    print(f"torch version:        {torch.__version__}")
-    print(f"CUDA available:       {torch.cuda.is_available()}")
-    if torch.cuda.is_available():
-        print(f"CUDA device:          {torch.cuda.get_device_name(0)}")
-        print(f"CUDA version:         {torch.version.cuda}")
-
-    import flash_attn
-    print(f"flash_attn version:   {flash_attn.__version__}")
-
-    import diffusers
-    print(f"diffusers version:    {diffusers.__version__}")
-
-    import transformers
-    print(f"transformers version: {transformers.__version__}")
-
-    import accelerate
-    print(f"accelerate version:   {accelerate.__version__}")
-
-    import cv2
-    print(f"opencv version:       {cv2.__version__}")
-
-    import decord
-    print(f"decord imported OK")
-
-    import onnxruntime
-    print(f"onnxruntime version:  {onnxruntime.__version__}")
-
-    import imageio
-    print(f"imageio version:      {imageio.__version__}")
-
-    import peft
-    print(f"peft version:         {peft.__version__}")
-
-    import sam2
-    print(f"SAM-2 imported OK")
-
-    import numpy
-    print(f"numpy version:        {numpy.__version__}")
-
-    print("\nAll Wan2.2 imports succeeded!")
 
 
 @app.function(
@@ -291,17 +240,122 @@ def preprocess(
     print("\nPreprocessing complete. Results committed to io volume.")
 
 
+@app.function(
+    image=wan_image,
+    gpu="A100-80GB",
+    volumes={HF_CACHE_PATH: volume, IO_PATH: io_volume},
+    timeout=3600,  # 1 hour — inference on 14B model can be slow
+)
+def inference(
+    src_root_path: str,
+    save_file: str,
+    ckpt_dir: str | None = None,
+):
+    """
+    Run Wan2.2 inference for character replacement.
+
+    Args:
+        src_root_path: Path to preprocessed results directory (contains src_pose.mp4, etc.).
+        save_file: Path to save the output video.
+        ckpt_dir: Path to model checkpoint dir. Auto-detected from HF cache if None.
+    """
+    import glob
+    import os
+    import subprocess
+
+    # --- Locate model checkpoint inside the HF cache ---
+    if ckpt_dir is None:
+        pattern = os.path.join(
+            HF_CACHE_PATH,
+            "hub",
+            "models--Wan-AI--Wan2.2-Animate-14B",
+            "snapshots",
+            "*",
+        )
+        matches = glob.glob(pattern)
+        assert matches, (
+            f"Model checkpoint not found at {pattern}. "
+            "Run download_model first."
+        )
+        ckpt_dir = matches[0]
+        print(f"Auto-detected ckpt_dir: {ckpt_dir}")
+
+    # Verify preprocessed inputs exist
+    for name in ["src_pose.mp4", "src_face.mp4", "src_bg.mp4", "src_mask.mp4"]:
+        fpath = os.path.join(src_root_path, name)
+        assert os.path.exists(fpath), f"Missing preprocessed file: {fpath}"
+        print(f"  Found: {name}")
+
+    os.makedirs(os.path.dirname(save_file), exist_ok=True)
+
+    cmd = [
+        "python", "generate.py",
+        "--task", "animate-14B",
+        "--ckpt_dir", ckpt_dir,
+        "--src_root_path", src_root_path,
+        "--save_file", save_file,
+        "--refert_num", "1",
+        "--replace_flag",
+        "--use_relighting_lora",
+        "--offload_model", "False",
+    ]
+
+    print(f"\nRunning inference from {WAN_REPO_PATH}")
+    print(f"Command: {' '.join(cmd)}\n")
+
+    process = subprocess.Popen(
+        cmd,
+        cwd=WAN_REPO_PATH,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    for line in process.stdout:
+        print(line, end="")
+
+    returncode = process.wait()
+
+    if returncode != 0:
+        raise RuntimeError(
+            f"generate.py failed with exit code {returncode}"
+        )
+
+    if os.path.exists(save_file):
+        size_mb = os.path.getsize(save_file) / (1024 * 1024)
+        print(f"\nOutput video: {save_file} ({size_mb:.1f} MB)")
+    else:
+        # generate.py may save with a default name — list output dir
+        out_dir = os.path.dirname(save_file)
+        print(f"\nExpected output not found at {save_file}")
+        print(f"Files in {out_dir}:")
+        for f in sorted(os.listdir(out_dir)):
+            fpath = os.path.join(out_dir, f)
+            size_mb = os.path.getsize(fpath) / (1024 * 1024)
+            print(f"  {f}  ({size_mb:.1f} MB)")
+
+    io_volume.commit()
+    print("\nInference complete. Results committed to io volume.")
+
+
 @app.local_entrypoint()
 def main():
     # Use example files from the Wan2.2 repo (baked into the image)
     examples_dir = f"{WAN_REPO_PATH}/examples/wan_animate/replace"
     video_path = f"{examples_dir}/video.mp4"
     refer_path = f"{examples_dir}/image.jpeg"
-    save_path = f"{IO_PATH}/preprocess_results"
+    preprocess_path = f"{IO_PATH}/preprocess_results"
+    output_path = f"{IO_PATH}/output.mp4"
 
     print("Starting preprocessing with sample inputs...")
     preprocess.remote(
         video_path=video_path,
         refer_path=refer_path,
-        save_path=save_path,
+        save_path=preprocess_path,
+    )
+
+    print("Starting inference...")
+    inference.remote(
+        src_root_path=preprocess_path,
+        save_file=output_path,
     )

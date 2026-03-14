@@ -115,3 +115,8 @@ export async function getVideos(params?: {
 export async function getVideo(id: string): Promise<ApiResponse<Job>> {
   return request(`/videos/${id}`);
 }
+
+/** Fetch user generation limits */
+export async function getUserLimits(): Promise<ApiResponse<{ used: number; max: number }>> {
+  return request("/jobs/limits");
+}

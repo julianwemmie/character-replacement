@@ -14,11 +14,10 @@ import {
   LogIn,
 } from "lucide-react";
 import type { Job, JobStatus } from "@character-replacement/shared";
-import { getJobs } from "@/lib/api";
+import { getJobs, getUserLimits } from "@/lib/api";
 import { authClient } from "@/lib/auth";
 
 const PAGE_SIZE = 12;
-const FREE_GENERATION_LIMIT = 2;
 
 type StatusFilter = "all" | JobStatus;
 
@@ -140,6 +139,7 @@ export function HistoryPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [limits, setLimits] = useState<{ used: number; max: number } | null>(null);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -176,14 +176,16 @@ export function HistoryPage() {
   useEffect(() => {
     if (!sessionLoading && session?.user) {
       fetchJobs(offset, statusFilter);
+      getUserLimits()
+        .then((res) => {
+          if (res.success && res.data) setLimits(res.data);
+        })
+        .catch(() => {});
     }
   }, [fetchJobs, offset, statusFilter, session, sessionLoading]);
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
-
-  // Count completed generations for limit display
-  const completedCount = jobs.filter((j) => j.status === "done").length;
 
   // Show loading while session is resolving
   if (sessionLoading) {
@@ -221,11 +223,13 @@ export function HistoryPage() {
           <h1 className="text-2xl font-bold">My Generations</h1>
         </div>
         {/* Generation count */}
-        <div className="text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">{completedCount}</span>
-          {" / "}
-          {FREE_GENERATION_LIMIT} free generations used
-        </div>
+        {limits && (
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{limits.used}</span>
+            {" / "}
+            {limits.max} free generations used
+          </div>
+        )}
       </div>
       <p className="text-muted-foreground">
         View your past video generation jobs.

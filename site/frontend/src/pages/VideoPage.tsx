@@ -127,7 +127,7 @@ export function VideoPage() {
 
       {/* Info + actions */}
       <Card>
-        <CardContent className="flex items-center justify-between pt-6">
+        <CardContent className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pt-6">
           <div>
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-green-500" />
@@ -142,7 +142,7 @@ export function VideoPage() {
               </p>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Button
               variant="outline"
               size="sm"

@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import {
   Card,
   CardHeader,
@@ -19,15 +19,38 @@ import {
   Loader2,
   X,
   AlertCircle,
+  LogIn,
 } from "lucide-react";
 import type { JobMode } from "@character-replacement/shared";
 import { MAX_VIDEO_DURATION_SECONDS } from "@character-replacement/shared";
-import { createJobWithFiles } from "@/lib/api";
+import { createJobWithFiles, getUserLimits } from "@/lib/api";
+import { authClient } from "@/lib/auth";
 
 type VideoInputMode = "file" | "url";
 
 export function UploadPage() {
   const navigate = useNavigate();
+  const { data: session, isPending: sessionLoading } = authClient.useSession();
+
+  // Limits state
+  const [limits, setLimits] = useState<{ used: number; max: number } | null>(null);
+  const [limitsLoading, setLimitsLoading] = useState(true);
+
+  useEffect(() => {
+    if (sessionLoading) return;
+    if (!session?.user) {
+      setLimitsLoading(false);
+      return;
+    }
+    getUserLimits()
+      .then((res) => {
+        if (res.success && res.data) {
+          setLimits(res.data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLimitsLoading(false));
+  }, [session, sessionLoading]);
 
   // Form state
   const [mode, setMode] = useState<JobMode>("replace");
@@ -120,7 +143,9 @@ export function UploadPage() {
     videoInputMode === "file" ? !!videoFile : videoUrl.trim().length > 0;
   const hasImage = !!imageFile;
   const hasDurationError = !!videoDurationError;
-  const canSubmit = hasVideo && hasImage && !hasDurationError && !submitting;
+  const isLoggedIn = !!session?.user;
+  const limitReached = limits !== null && limits.used >= limits.max;
+  const canSubmit = hasVideo && hasImage && !hasDurationError && !submitting && isLoggedIn && !limitReached;
 
   // Submit handler
   const handleSubmit = async () => {
@@ -339,6 +364,41 @@ export function UploadPage() {
                 : "Animate the target character image using motions from the source video."}
             </p>
           </div>
+
+          {/* ---- Auth / Limit warnings ---- */}
+          {!sessionLoading && !isLoggedIn && (
+            <div className="rounded-lg border border-yellow-200 bg-yellow-50 dark:border-yellow-900 dark:bg-yellow-950/30 p-3">
+              <p className="text-sm text-yellow-700 dark:text-yellow-300 flex items-center gap-2">
+                <LogIn className="h-4 w-4 flex-shrink-0" />
+                You must sign in to create videos.
+              </p>
+              <Link to="/login">
+                <Button size="sm" variant="outline" className="mt-2 gap-2">
+                  <LogIn className="h-3 w-3" />
+                  Sign In
+                </Button>
+              </Link>
+            </div>
+          )}
+
+          {!limitsLoading && isLoggedIn && limits && (
+            <div className={`rounded-lg border p-3 ${
+              limitReached
+                ? "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30"
+                : "border-muted bg-muted/30"
+            }`}>
+              <p className={`text-sm flex items-center gap-2 ${
+                limitReached
+                  ? "text-red-700 dark:text-red-300"
+                  : "text-muted-foreground"
+              }`}>
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                {limitReached
+                  ? `You have used all ${limits.max} free generations.`
+                  : `${limits.max - limits.used} of ${limits.max} free generations remaining.`}
+              </p>
+            </div>
+          )}
 
           {/* ---- Upload progress ---- */}
           {submitting && (

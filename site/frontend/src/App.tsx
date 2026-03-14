@@ -6,6 +6,7 @@ import { UploadPage } from "@/pages/UploadPage";
 import { JobStatusPage } from "@/pages/JobStatusPage";
 import { VideoPage } from "@/pages/VideoPage";
 import { HistoryPage } from "@/pages/HistoryPage";
+import { NotFoundPage } from "@/pages/NotFoundPage";
 
 export function App() {
   return (
@@ -18,6 +19,7 @@ export function App() {
           <Route path="/jobs/:jobId" element={<JobStatusPage />} />
           <Route path="/videos/:videoId" element={<VideoPage />} />
           <Route path="/history" element={<HistoryPage />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

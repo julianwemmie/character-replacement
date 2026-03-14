@@ -7,6 +7,7 @@ import { initDatabase } from "./db-init";
 import { jobRoutes } from "./routes/jobs";
 import { webhookRoutes } from "./routes/webhooks";
 import { videoRoutes } from "./routes/videos";
+import { ogTagsMiddleware } from "./middleware/og-tags";
 import type { ApiResponse } from "@character-replacement/shared";
 
 const app = express();
@@ -38,6 +39,9 @@ app.get("/api/health", (_req, res) => {
 // Serve frontend static files in production
 const frontendDist = path.resolve(__dirname, "../../frontend/dist");
 app.use(express.static(frontendDist));
+
+// Inject og:video meta tags for /videos/:id pages (before SPA fallback)
+app.use(ogTagsMiddleware(frontendDist));
 
 // SPA fallback: serve index.html for any non-API route
 app.get("*", (req, res, next) => {

@@ -1,8 +1,20 @@
 import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
-import { Sun, Moon, Upload, History, Compass, LogIn } from "lucide-react";
+import {
+  Sun,
+  Moon,
+  Upload,
+  History,
+  Compass,
+  LogIn,
+  LogOut,
+  Menu,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { authClient } from "@/lib/auth";
+import { signOut } from "@/lib/auth";
 
 function ThemeToggle() {
   const [dark, setDark] = useState(() => {
@@ -40,6 +52,15 @@ const navLinks = [
 
 export function Layout() {
   const location = useLocation();
+  const { data: session, isPending } = authClient.useSession();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  const isLoggedIn = !!session?.user;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -49,7 +70,8 @@ export function Layout() {
             <span className="text-lg font-bold">Character Replacement</span>
           </Link>
 
-          <nav className="flex items-center space-x-1 flex-1">
+          {/* Desktop nav */}
+          <nav className="hidden md:flex items-center space-x-1 flex-1">
             {navLinks.map(({ to, label, icon: Icon }) => (
               <Link key={to} to={to}>
                 <Button
@@ -67,21 +89,107 @@ export function Layout() {
             ))}
           </nav>
 
-          <div className="flex items-center space-x-2">
+          {/* Desktop auth + theme */}
+          <div className="hidden md:flex items-center space-x-2">
             <ThemeToggle />
-            <Link to="/login">
-              <Button variant="outline" size="sm" className="gap-2">
-                <LogIn className="h-4 w-4" />
-                Sign In
-              </Button>
-            </Link>
+            {isPending ? null : isLoggedIn ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground truncate max-w-[150px]">
+                  {session.user.name || session.user.email}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => signOut()}
+                >
+                  <LogOut className="h-4 w-4" />
+                  Sign Out
+                </Button>
+              </div>
+            ) : (
+              <Link to="/login">
+                <Button variant="outline" size="sm" className="gap-2">
+                  <LogIn className="h-4 w-4" />
+                  Sign In
+                </Button>
+              </Link>
+            )}
+          </div>
+
+          {/* Mobile menu button */}
+          <div className="flex items-center gap-2 md:hidden ml-auto">
+            <ThemeToggle />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              aria-label="Toggle menu"
+            >
+              {mobileMenuOpen ? (
+                <X className="h-5 w-5" />
+              ) : (
+                <Menu className="h-5 w-5" />
+              )}
+            </Button>
           </div>
         </div>
+
+        {/* Mobile nav dropdown */}
+        {mobileMenuOpen && (
+          <div className="md:hidden border-t bg-background p-4 space-y-2">
+            {navLinks.map(({ to, label, icon: Icon }) => (
+              <Link key={to} to={to} className="block">
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    "w-full justify-start gap-2",
+                    location.pathname === to && "bg-accent"
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {label}
+                </Button>
+              </Link>
+            ))}
+            <div className="border-t pt-2 mt-2">
+              {isPending ? null : isLoggedIn ? (
+                <div className="space-y-2">
+                  <p className="text-sm text-muted-foreground px-4 truncate">
+                    {session.user.name || session.user.email}
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="w-full gap-2"
+                    onClick={() => signOut()}
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                  </Button>
+                </div>
+              ) : (
+                <Link to="/login" className="block">
+                  <Button variant="outline" className="w-full gap-2">
+                    <LogIn className="h-4 w-4" />
+                    Sign In
+                  </Button>
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="container mx-auto px-4 py-6">
         <Outlet />
       </main>
+
+      {/* Footer */}
+      <footer className="border-t py-6 mt-auto">
+        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
+          Character Replacement &mdash; AI-powered video generation
+        </div>
+      </footer>
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { nanoid } from "nanoid";
 import type { ApiResponse, Job, JobMode } from "@character-replacement/shared";
-import { createJob, getJob, getAllJobs } from "../store";
+import { createJob, getJob, getAllJobs, getUserGenerationCount } from "../store";
 import { enqueueJob } from "../queue";
 import {
   requireAuth,
@@ -35,6 +35,31 @@ const uploadFields = upload.fields([
 
 export const jobRoutes = Router();
 
+const FREE_GENERATION_LIMIT = 2;
+
+/**
+ * GET /api/jobs/limits
+ * Returns the user's generation usage and limit.
+ * Requires authentication.
+ */
+jobRoutes.get(
+  "/limits",
+  requireAuth,
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const used = await getUserGenerationCount(req.userId!);
+      res.json({
+        success: true,
+        data: { used, max: FREE_GENERATION_LIMIT },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      const response: ApiResponse<never> = { success: false, error: message };
+      res.status(500).json(response);
+    }
+  }
+);
+
 /**
  * POST /api/jobs
  * Accept multipart form with video file (or URL) + image file, validate, return job ID.
@@ -46,6 +71,17 @@ jobRoutes.post(
   uploadFields,
   async (req: AuthenticatedRequest, res) => {
     try {
+      // Check generation limit before processing
+      const used = await getUserGenerationCount(req.userId!);
+      if (used >= FREE_GENERATION_LIMIT) {
+        const response: ApiResponse<never> = {
+          success: false,
+          error: `You have reached the free generation limit (${FREE_GENERATION_LIMIT}). Please try again later or upgrade your plan.`,
+        };
+        res.status(403).json(response);
+        return;
+      }
+
       const files = req.files as
         | { video?: Express.Multer.File[]; image?: Express.Multer.File[] }
         | undefined;

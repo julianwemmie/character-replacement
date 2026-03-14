@@ -156,6 +156,24 @@ export async function getPublicJobs(options?: {
   };
 }
 
+/**
+ * Count how many jobs a user has created (all statuses except failed).
+ */
+export async function getUserGenerationCount(userId: string): Promise<number> {
+  if (!isTursoConfigured()) {
+    // In-memory fallback: no user tracking, return 0
+    return 0;
+  }
+
+  const client = getTursoClient()!;
+  const result = await client.execute({
+    sql: "SELECT COUNT(*) as cnt FROM jobs WHERE user_id = ? AND status != 'failed'",
+    args: [userId],
+  });
+
+  return Number(result.rows[0]?.cnt ?? 0);
+}
+
 export async function createJob(job: Job, userId?: string): Promise<void> {
   if (!isTursoConfigured()) {
     memoryJobs.set(job.id, job);

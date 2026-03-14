@@ -41,6 +41,13 @@ export interface ApiResponse<T> {
   error?: string;
 }
 
+export interface PaginatedApiResponse<T> {
+  success: boolean;
+  data?: T[];
+  total?: number;
+  error?: string;
+}
+
 /** Payload sent by Modal when a job completes */
 export interface WebhookPayload {
   job_id: string;

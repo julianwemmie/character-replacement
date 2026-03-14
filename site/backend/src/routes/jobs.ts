@@ -10,9 +10,6 @@ import { AppError } from "../middleware/errorHandler.js";
 
 const router = Router();
 
-// All job routes require auth
-router.use(authMiddleware);
-
 /**
  * POST /api/jobs -- Create a new character replacement job.
  * Accepts multipart form data with `video` and `image` files,
@@ -20,6 +17,7 @@ router.use(authMiddleware);
  */
 router.post(
   "/",
+  authMiddleware,
   upload.fields([
     { name: "video", maxCount: 1 },
     { name: "image", maxCount: 1 },
@@ -80,7 +78,7 @@ router.post(
 /**
  * GET /api/jobs -- List jobs for the authenticated user.
  */
-router.get("/", async (req, res, next) => {
+router.get("/", authMiddleware, async (req, res, next) => {
   try {
     const jobs = await getJobsByUser(req.userId!);
     const response: ListJobsResponse = { jobs };
@@ -91,7 +89,7 @@ router.get("/", async (req, res, next) => {
 });
 
 /**
- * GET /api/jobs/:id -- Get a single job by ID.
+ * GET /api/jobs/:id -- Get a single job by ID (public).
  */
 router.get("/:id", async (req, res, next) => {
   try {

@@ -1,7 +1,9 @@
 import express from "express";
 import cors from "cors";
+import { toNodeHandler } from "better-auth/node";
 import { config } from "./config.js";
 import { initDb } from "./db.js";
+import { auth } from "./auth.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { getQueueSize } from "./queue.js";
 import jobsRouter from "./routes/jobs.js";
@@ -11,13 +13,17 @@ import fs from "fs";
 
 const app = express();
 
-// CORS
+// CORS — must include credentials for auth cookies
 app.use(
   cors({
     origin: config.cors.origin,
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
   }),
 );
+
+// Better Auth handler — must be mounted BEFORE express.json()
+app.all("/api/auth/*splat", toNodeHandler(auth));
 
 // Body parsing for JSON (webhook routes etc.)
 app.use(express.json());

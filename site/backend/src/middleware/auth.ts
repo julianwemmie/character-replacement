@@ -1,29 +1,31 @@
 import type { Request, Response, NextFunction } from "express";
-import { upsertUser } from "../db.js";
+import { fromNodeHeaders } from "better-auth/node";
+import { auth } from "../auth.js";
 
 /**
- * Auth middleware placeholder.
- *
- * Currently reads user ID from the x-user-id header.
- * Will be replaced with real authentication in Step 5.
+ * Auth middleware — validates the session via Better Auth
+ * and attaches user info to the request.
  */
 export async function authMiddleware(
   req: Request,
   res: Response,
   next: NextFunction,
 ): Promise<void> {
-  const userId = req.headers["x-user-id"] as string | undefined;
+  try {
+    const session = await auth.api.getSession({
+      headers: fromNodeHeaders(req.headers),
+    });
 
-  if (!userId) {
-    res.status(401).json({ error: "Missing x-user-id header" });
-    return;
+    if (!session) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+
+    req.userId = session.user.id;
+    next();
+  } catch {
+    res.status(401).json({ error: "Not authenticated" });
   }
-
-  // Ensure user exists in the database (upsert -- race-safe)
-  await upsertUser(userId);
-
-  req.userId = userId;
-  next();
 }
 
 // Extend Express Request type to include userId

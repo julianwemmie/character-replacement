@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useSession, signOut } from "@/lib/auth-client";
 
 const navLinks = [
   { to: "/", label: "Home" },
@@ -10,6 +11,12 @@ const navLinks = [
 
 export function Layout() {
   const { pathname } = useLocation();
+  const { data: session } = useSession();
+  const user = session?.user;
+
+  const handleSignOut = async () => {
+    await signOut();
+  };
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -31,9 +38,28 @@ export function Layout() {
                 <Link to={to}>{label}</Link>
               </Button>
             ))}
-            <Button variant="outline" size="sm" asChild className="ml-2">
-              <Link to="/login">Log in</Link>
-            </Button>
+
+            {user ? (
+              <div className="ml-2 flex items-center gap-2">
+                {user.image && (
+                  <img
+                    src={user.image}
+                    alt={user.name ?? ""}
+                    className="h-7 w-7 rounded-full"
+                  />
+                )}
+                <span className="text-sm font-medium">
+                  {user.name ?? user.email}
+                </span>
+                <Button variant="outline" size="sm" onClick={handleSignOut}>
+                  Sign out
+                </Button>
+              </div>
+            ) : (
+              <Button variant="outline" size="sm" asChild className="ml-2">
+                <Link to="/login">Log in</Link>
+              </Button>
+            )}
           </nav>
         </div>
       </header>

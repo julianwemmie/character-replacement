@@ -1,5 +1,6 @@
 import PQueue from "p-queue";
 import { updateJobStatus } from "./db.js";
+import { config } from "./config.js";
 import {
   downloadVideo,
   uploadLocalFile,
@@ -62,11 +63,15 @@ async function processJob(job: QueuedJob): Promise<void> {
     // Step 4: Inference
     console.log(`[queue] Job ${jobId}: starting inference`);
     await updateJobStatus(jobId, "generating");
+    const webhookUrl = `${config.auth.url}/api/webhooks/modal`;
     await runInference({
       srcRootPath: jobPreprocessPath(jobId),
       saveFile: jobOutputPath(jobId),
       mode,
       videoPath: remoteVideo,
+      webhookUrl,
+      jobId,
+      webhookSecret: config.webhookSecret || undefined,
     });
 
     // Step 5: Done

@@ -279,6 +279,9 @@ class InferenceRunner:
         refert_num: int = 1,
         offload_model: bool = False,
         extra_args: list[str] | None = None,
+        webhook_url: str | None = None,
+        job_id: str | None = None,
+        webhook_secret: str | None = None,
     ):
         """
         Run Wan2.2 inference.
@@ -292,6 +295,9 @@ class InferenceRunner:
             refert_num: Number of reference frames.
             offload_model: Whether to offload model to CPU between steps.
             extra_args: Additional CLI args to pass to generate.py.
+            webhook_url: Optional URL to POST job result to on completion/failure.
+            job_id: Job identifier included in the webhook payload.
+            webhook_secret: Shared secret sent in x-webhook-secret header.
         """
         io_volume.reload()
         assert mode in ("replace", "animate"), f"Invalid mode: {mode}. Use 'replace' or 'animate'."
@@ -299,113 +305,171 @@ class InferenceRunner:
         import os
         import subprocess
 
-        # --- Locate model checkpoint inside the HF cache ---
-        if ckpt_dir is None:
-            pattern = os.path.join(
-                HF_CACHE_PATH,
-                "hub",
-                "models--Wan-AI--Wan2.2-Animate-14B",
-                "snapshots",
-                "*",
-            )
-            matches = glob.glob(pattern)
-            assert matches, (
-                f"Model checkpoint not found at {pattern}. "
-                "Run download_model first."
-            )
-            ckpt_dir = matches[0]
-            print(f"Auto-detected ckpt_dir: {ckpt_dir}")
+        try:
+            # --- Locate model checkpoint inside the HF cache ---
+            if ckpt_dir is None:
+                pattern = os.path.join(
+                    HF_CACHE_PATH,
+                    "hub",
+                    "models--Wan-AI--Wan2.2-Animate-14B",
+                    "snapshots",
+                    "*",
+                )
+                matches = glob.glob(pattern)
+                assert matches, (
+                    f"Model checkpoint not found at {pattern}. "
+                    "Run download_model first."
+                )
+                ckpt_dir = matches[0]
+                print(f"Auto-detected ckpt_dir: {ckpt_dir}")
 
-        # Verify preprocessed inputs exist
-        expected_files = ["src_pose.mp4", "src_face.mp4"]
-        if mode == "replace":
-            expected_files += ["src_bg.mp4", "src_mask.mp4"]
-        for name in expected_files:
-            fpath = os.path.join(src_root_path, name)
-            assert os.path.exists(fpath), f"Missing preprocessed file: {fpath}"
-            print(f"  Found: {name}")
+            # Verify preprocessed inputs exist
+            expected_files = ["src_pose.mp4", "src_face.mp4"]
+            if mode == "replace":
+                expected_files += ["src_bg.mp4", "src_mask.mp4"]
+            for name in expected_files:
+                fpath = os.path.join(src_root_path, name)
+                assert os.path.exists(fpath), f"Missing preprocessed file: {fpath}"
+                print(f"  Found: {name}")
 
-        os.makedirs(os.path.dirname(save_file), exist_ok=True)
+            os.makedirs(os.path.dirname(save_file), exist_ok=True)
 
-        cmd = [
-            "torchrun",
-            f"--nproc_per_node={INFERENCE_GPU_COUNT}",
-            "generate.py",
-            "--task", "animate-14B",
-            "--ckpt_dir", ckpt_dir,
-            "--src_root_path", src_root_path,
-            "--save_file", save_file,
-            "--refert_num", str(refert_num),
-            "--dit_fsdp",
-            "--offload_model", str(offload_model),
-        ]
-        cmd += ["--ulysses_size", str(INFERENCE_GPU_COUNT)]
-        if mode == "replace":
-            cmd += ["--replace_flag", "--use_relighting_lora"]
-        if extra_args:
-            cmd.extend(extra_args)
-
-        print(f"\nRunning inference from {WAN_REPO_PATH}")
-        print(f"Command: {' '.join(cmd)}\n")
-
-        process = subprocess.Popen(
-            cmd,
-            cwd=WAN_REPO_PATH,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-
-        for line in process.stdout:
-            print(line, end="")
-
-        returncode = process.wait()
-
-        if returncode != 0:
-            raise RuntimeError(
-                f"generate.py failed with exit code {returncode}"
-            )
-
-        # Mux audio from the original driving video onto the generated output
-        if os.path.exists(save_file) and video_path and os.path.exists(video_path):
-            tmp_file = save_file + ".noaudio.mp4"
-            os.rename(save_file, tmp_file)
-            mux_cmd = [
-                "ffmpeg", "-y",
-                "-i", tmp_file,
-                "-i", video_path,
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-map", "0:v:0",
-                "-map", "1:a:0?",
-                "-shortest",
-                save_file,
+            cmd = [
+                "torchrun",
+                f"--nproc_per_node={INFERENCE_GPU_COUNT}",
+                "generate.py",
+                "--task", "animate-14B",
+                "--ckpt_dir", ckpt_dir,
+                "--src_root_path", src_root_path,
+                "--save_file", save_file,
+                "--refert_num", str(refert_num),
+                "--dit_fsdp",
+                "--offload_model", str(offload_model),
             ]
-            print(f"\nMuxing audio from {video_path}")
-            mux_result = subprocess.run(mux_cmd, capture_output=True, text=True)
-            if mux_result.returncode == 0:
-                os.remove(tmp_file)
-                print("Audio muxed successfully.")
+            cmd += ["--ulysses_size", str(INFERENCE_GPU_COUNT)]
+            if mode == "replace":
+                cmd += ["--replace_flag", "--use_relighting_lora"]
+            if extra_args:
+                cmd.extend(extra_args)
+
+            print(f"\nRunning inference from {WAN_REPO_PATH}")
+            print(f"Command: {' '.join(cmd)}\n")
+
+            process = subprocess.Popen(
+                cmd,
+                cwd=WAN_REPO_PATH,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+
+            for line in process.stdout:
+                print(line, end="")
+
+            returncode = process.wait()
+
+            if returncode != 0:
+                raise RuntimeError(
+                    f"generate.py failed with exit code {returncode}"
+                )
+
+            # Mux audio from the original driving video onto the generated output
+            if os.path.exists(save_file) and video_path and os.path.exists(video_path):
+                tmp_file = save_file + ".noaudio.mp4"
+                os.rename(save_file, tmp_file)
+                mux_cmd = [
+                    "ffmpeg", "-y",
+                    "-i", tmp_file,
+                    "-i", video_path,
+                    "-c:v", "copy",
+                    "-c:a", "aac",
+                    "-map", "0:v:0",
+                    "-map", "1:a:0?",
+                    "-shortest",
+                    save_file,
+                ]
+                print(f"\nMuxing audio from {video_path}")
+                mux_result = subprocess.run(mux_cmd, capture_output=True, text=True)
+                if mux_result.returncode == 0:
+                    os.remove(tmp_file)
+                    print("Audio muxed successfully.")
+                else:
+                    # Fall back to video-only output if audio mux fails
+                    print(f"Audio mux failed: {mux_result.stderr}")
+                    os.rename(tmp_file, save_file)
+
+            if os.path.exists(save_file):
+                size_mb = os.path.getsize(save_file) / (1024 * 1024)
+                print(f"\nOutput video: {save_file} ({size_mb:.1f} MB)")
             else:
-                # Fall back to video-only output if audio mux fails
-                print(f"Audio mux failed: {mux_result.stderr}")
-                os.rename(tmp_file, save_file)
+                # generate.py may save with a default name — list output dir
+                out_dir = os.path.dirname(save_file)
+                print(f"\nExpected output not found at {save_file}")
+                print(f"Files in {out_dir}:")
+                for f in sorted(os.listdir(out_dir)):
+                    fpath = os.path.join(out_dir, f)
+                    size_mb = os.path.getsize(fpath) / (1024 * 1024)
+                    print(f"  {f}  ({size_mb:.1f} MB)")
 
-        if os.path.exists(save_file):
-            size_mb = os.path.getsize(save_file) / (1024 * 1024)
-            print(f"\nOutput video: {save_file} ({size_mb:.1f} MB)")
-        else:
-            # generate.py may save with a default name — list output dir
-            out_dir = os.path.dirname(save_file)
-            print(f"\nExpected output not found at {save_file}")
-            print(f"Files in {out_dir}:")
-            for f in sorted(os.listdir(out_dir)):
-                fpath = os.path.join(out_dir, f)
-                size_mb = os.path.getsize(fpath) / (1024 * 1024)
-                print(f"  {f}  ({size_mb:.1f} MB)")
+            io_volume.commit()
+            print("\nInference complete. Results committed to io volume.")
 
-        io_volume.commit()
-        print("\nInference complete. Results committed to io volume.")
+            # Send webhook callback on success
+            if webhook_url:
+                self._send_webhook(
+                    webhook_url,
+                    job_id=job_id,
+                    status="done",
+                    output_path=save_file,
+                    secret=webhook_secret,
+                )
+        except Exception as exc:
+            # Send webhook callback on failure, then re-raise
+            if webhook_url:
+                self._send_webhook(
+                    webhook_url,
+                    job_id=job_id,
+                    status="failed",
+                    error=str(exc),
+                    secret=webhook_secret,
+                )
+            raise
+
+    def _send_webhook(
+        self,
+        webhook_url: str,
+        job_id: str | None,
+        status: str,
+        output_path: str | None = None,
+        error: str | None = None,
+        secret: str | None = None,
+    ):
+        """POST job result to the webhook URL. Failures are logged but not raised."""
+        import json
+        import urllib.request
+        import urllib.error
+
+        payload = {
+            "jobId": job_id,
+            "status": status,
+            "outputPath": output_path,
+            "error": error,
+        }
+        data = json.dumps(payload).encode()
+        headers: dict[str, str] = {"Content-Type": "application/json"}
+        if secret:
+            headers["x-webhook-secret"] = secret
+        req = urllib.request.Request(
+            webhook_url,
+            data=data,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                print(f"Webhook delivered: {resp.status}")
+        except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+            print(f"Webhook delivery failed (non-fatal): {exc}")
 
 
 @app.function(

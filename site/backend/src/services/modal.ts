@@ -104,6 +104,9 @@ export async function runInference(params: {
   saveFile: string;
   mode: string;
   videoPath: string;
+  webhookUrl?: string;
+  jobId?: string;
+  webhookSecret?: string;
 }): Promise<void> {
   const modal = getClient();
   const cls = await modal.cls.fromName(WAN_APP, "InferenceRunner");
@@ -114,6 +117,9 @@ export async function runInference(params: {
     save_file: params.saveFile,
     mode: params.mode,
     video_path: params.videoPath,
+    webhook_url: params.webhookUrl,
+    job_id: params.jobId,
+    webhook_secret: params.webhookSecret,
   });
 }
 

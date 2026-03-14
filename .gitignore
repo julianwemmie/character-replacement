@@ -11,3 +11,8 @@ wheels/
 .DS_Store
 input/
 output/
+
+# Node
+node_modules/
+dist/
+package-lock.json

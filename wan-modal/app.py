@@ -111,6 +111,8 @@ def preprocess(
     ckpt_path: str | None = None,
     mask_w_len: int = 10,
     mask_h_len: int = 20,
+    resolution_w: int = 1280,
+    resolution_h: int = 720,
 ):
     """
     Run Wan2.2 preprocessing pipeline.
@@ -211,7 +213,7 @@ def preprocess(
         "--video_path", video_path,
         "--refer_path", refer_path,
         "--save_path", save_path,
-        "--resolution_area", "1280", "720",
+        "--resolution_area", str(resolution_w), str(resolution_h),
     ]
     if mode == "replace":
         cmd += [
@@ -467,6 +469,21 @@ def main(
     """
     import os
 
+    # Parse size (e.g. "832*480") into width and height
+    parts = size.split("*")
+    assert len(parts) == 2, f"Invalid size format: {size!r}. Expected 'W*H', e.g. '832*480'."
+    resolution_w, resolution_h = int(parts[0]), int(parts[1])
+    if resolution_w % 16 != 0:
+        raise ValueError(
+            f"Width {resolution_w} is not divisible by 16 "
+            f"(required by VAE stride 8 x patch size 2)."
+        )
+    if resolution_h % 16 != 0:
+        raise ValueError(
+            f"Height {resolution_h} is not divisible by 16 "
+            f"(required by VAE stride 8 x patch size 2)."
+        )
+
     remote_job_dir = f"{IO_PATH}/jobs/{job_name}"
     remote_preprocess_path = f"{remote_job_dir}/preprocess_results"
     remote_output_path = f"{remote_job_dir}/output.mp4"
@@ -507,14 +524,14 @@ def main(
             mode=mode,
             mask_w_len=mask_w_len,
             mask_h_len=mask_h_len,
+            resolution_w=resolution_w,
+            resolution_h=resolution_h,
         )
 
     # --- Inference ---
     if run_inference:
         # Build extra args for generate.py
         extra_args = []
-        if size != "1280*720":
-            extra_args += ["--size", size]
         if frame_num > 0:
             extra_args += ["--frame_num", str(frame_num)]
         if sample_steps > 0:

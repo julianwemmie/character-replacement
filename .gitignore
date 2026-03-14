@@ -8,6 +8,21 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Node
+node_modules/
+
+# OS
 .DS_Store
+
+# Project
 input/
 output/
+
+.env
+
+blog/
+blog-attachments/
+comparisons/
+preprocess_results_fixed/
+preprocess_results_old/

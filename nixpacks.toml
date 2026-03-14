@@ -1,0 +1,12 @@
+[phases.setup]
+nixPkgs = ["bun"]
+
+[phases.build]
+cmds = [
+  "cd site/frontend && bun install && bun run build",
+  "cd site/shared && bun install && bun run build",
+  "cd site/backend && bun install && bun run build",
+]
+
+[start]
+cmd = "cd site/backend && bun start"

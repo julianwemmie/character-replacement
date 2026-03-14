@@ -1,0 +1,6 @@
+[project]
+name = "site-modal"
+version = "0.1.0"
+description = "Site-specific Modal functions for character replacement"
+requires-python = ">=3.12"
+dependencies = []

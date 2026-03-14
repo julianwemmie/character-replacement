@@ -1,8 +1,10 @@
 import express from "express";
 import cors from "cors";
+import path from "path";
+import { fileURLToPath } from "url";
 import { toNodeHandler } from "better-auth/node";
 import { config } from "./config.js";
-import { initDb } from "./db.js";
+import { initDb, getJob } from "./db.js";
 import { auth } from "./auth.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { getQueueSize } from "./queue.js";
@@ -11,6 +13,10 @@ import meRouter from "./routes/me.js";
 import webhooksRouter from "./routes/webhooks.js";
 import exploreRouter from "./routes/explore.js";
 import fs from "fs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const FRONTEND_DIST = path.resolve(__dirname, "../../frontend/dist");
+const SPA_INDEX = path.join(FRONTEND_DIST, "index.html");
 
 const app = express();
 
@@ -41,6 +47,53 @@ app.use("/api/jobs", jobsRouter);
 app.use("/api/me", meRouter);
 app.use("/api/webhooks", webhooksRouter);
 app.use("/api/explore", exploreRouter);
+
+// ---------------------------------------------------------------------------
+// OG meta-tag injection for /videos/:id  (social sharing / link previews)
+// ---------------------------------------------------------------------------
+function buildOgTags(outputUrl: string, pageUrl: string): string {
+  return [
+    `<meta property="og:type" content="video.other" />`,
+    `<meta property="og:title" content="Character Replacement Video" />`,
+    `<meta property="og:description" content="Generated with Wan2.2 character replacement" />`,
+    `<meta property="og:video" content="${outputUrl}" />`,
+    `<meta property="og:video:type" content="video/mp4" />`,
+    `<meta property="og:video:width" content="1280" />`,
+    `<meta property="og:video:height" content="720" />`,
+    `<meta property="og:url" content="${pageUrl}" />`,
+    `<meta name="twitter:card" content="player" />`,
+    `<meta name="twitter:player" content="${pageUrl}" />`,
+  ].join("\n    ");
+}
+
+app.get("/videos/:id", async (req, res, next) => {
+  try {
+    if (!fs.existsSync(SPA_INDEX)) return next();
+
+    const job = await getJob(req.params.id);
+    if (!job?.outputUrl) return res.sendFile(SPA_INDEX);
+
+    const pageUrl = `${req.protocol}://${req.get("host")}${req.originalUrl}`;
+    const html = fs
+      .readFileSync(SPA_INDEX, "utf-8")
+      .replace("</head>", `    ${buildOgTags(job.outputUrl, pageUrl)}\n  </head>`);
+    res.send(html);
+  } catch {
+    next();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Serve built frontend (production) with SPA fallback
+// ---------------------------------------------------------------------------
+if (fs.existsSync(SPA_INDEX)) {
+  app.use(express.static(FRONTEND_DIST));
+
+  // SPA catch-all: any non-API route serves index.html
+  app.get("*", (_req, res) => {
+    res.sendFile(SPA_INDEX);
+  });
+}
 
 // Error handling
 app.use(errorHandler);

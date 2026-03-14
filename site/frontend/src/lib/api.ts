@@ -1,4 +1,4 @@
-import type { Job, ApiResponse, CreateJobRequest } from "@character-replacement/shared";
+import type { Job, ApiResponse, CreateJobRequest, JobMode } from "@character-replacement/shared";
 
 const API_BASE = "/api";
 
@@ -25,10 +25,72 @@ export async function createJob(data: CreateJobRequest): Promise<ApiResponse<Job
   });
 }
 
+/**
+ * Create a job by uploading files via multipart form data.
+ * Supports progress tracking via XMLHttpRequest.
+ */
+export async function createJobWithFiles(params: {
+  videoFile: File | null;
+  videoUrl?: string;
+  imageFile: File;
+  mode: JobMode;
+  onProgress?: (percent: number) => void;
+}): Promise<ApiResponse<Job>> {
+  const { videoFile, videoUrl, imageFile, mode, onProgress } = params;
+
+  const formData = new FormData();
+  formData.append("mode", mode);
+
+  if (videoFile) {
+    formData.append("video", videoFile);
+  } else if (videoUrl) {
+    formData.append("sourceVideoUrl", videoUrl);
+  }
+
+  formData.append("image", imageFile);
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", `${API_BASE}/jobs`);
+    xhr.withCredentials = true;
+    // Don't set Content-Type — the browser sets it with the boundary for FormData
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        onProgress(pct);
+      }
+    };
+
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(data);
+        } else {
+          reject(new Error(data.error || `HTTP ${xhr.status}`));
+        }
+      } catch {
+        reject(new Error(`HTTP ${xhr.status}: ${xhr.statusText}`));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error("Network error"));
+    xhr.ontimeout = () => reject(new Error("Request timed out"));
+
+    xhr.send(formData);
+  });
+}
+
 export async function getJob(id: string): Promise<ApiResponse<Job>> {
   return request(`/jobs/${id}`);
 }
 
 export async function getJobs(): Promise<ApiResponse<Job[]>> {
   return request("/jobs");
+}
+
+/** Fetch video info (public, no auth required) */
+export async function getVideo(id: string): Promise<ApiResponse<Job>> {
+  return request(`/videos/${id}`);
 }

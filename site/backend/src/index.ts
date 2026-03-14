@@ -6,6 +6,7 @@ import { auth } from "./auth";
 import { initDatabase } from "./db-init";
 import { jobRoutes } from "./routes/jobs";
 import { webhookRoutes } from "./routes/webhooks";
+import { videoRoutes } from "./routes/videos";
 import type { ApiResponse } from "@character-replacement/shared";
 
 const app = express();
@@ -28,6 +29,7 @@ app.use(express.json());
 // API routes
 app.use("/api/jobs", jobRoutes);
 app.use("/api/webhooks", webhookRoutes);
+app.use("/api/videos", videoRoutes);
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });

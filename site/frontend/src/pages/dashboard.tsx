@@ -112,6 +112,10 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    document.title = "Dashboard - Character Replacement";
+  }, []);
+
+  useEffect(() => {
     Promise.all([
       api.jobs.list(),
       api.me().catch(() => null),

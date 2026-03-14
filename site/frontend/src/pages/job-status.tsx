@@ -10,7 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 const POLL_INTERVAL = 3000;
 
@@ -51,8 +51,13 @@ export function JobStatusPage() {
   const { id } = useParams<{ id: string }>();
   const [job, setJob] = useState<Job | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
   const [elapsed, setElapsed] = useState("");
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    document.title = "Job Status - Character Replacement";
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -71,7 +76,12 @@ export function JobStatusPage() {
         }
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : "Failed to fetch job");
+        if (err instanceof ApiError && err.status === 404) {
+          setNotFound(true);
+          if (intervalRef.current) clearInterval(intervalRef.current);
+        } else {
+          setError(err instanceof Error ? err.message : "Failed to fetch job");
+        }
       }
     }
 
@@ -99,6 +109,20 @@ export function JobStatusPage() {
       return () => clearInterval(timer);
     }
   }, [job?.createdAt, job?.status]);
+
+  if (notFound) {
+    return (
+      <div className="flex flex-col items-center gap-4 pt-12 text-center">
+        <h1 className="text-4xl font-bold text-muted-foreground">Job not found</h1>
+        <p className="text-muted-foreground">
+          This job doesn't exist or may have been removed.
+        </p>
+        <Button asChild className="mt-4">
+          <Link to="/dashboard">Back to Dashboard</Link>
+        </Button>
+      </div>
+    );
+  }
 
   if (error && !job) {
     return (

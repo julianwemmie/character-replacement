@@ -16,10 +16,23 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, options);
+  let res: Response;
+  try {
+    res = await fetch(path, options);
+  } catch {
+    throw new ApiError(0, "Network error. Please check your connection and try again.");
+  }
   if (!res.ok) {
-    const body = await res.text().catch(() => "Unknown error");
-    throw new ApiError(res.status, body);
+    let message = "Something went wrong. Please try again.";
+    try {
+      const body = await res.json();
+      if (body?.error && typeof body.error === "string") {
+        message = body.error;
+      }
+    } catch {
+      // Response wasn't JSON — use default message
+    }
+    throw new ApiError(res.status, message);
   }
   return res.json() as Promise<T>;
 }

@@ -20,6 +20,16 @@ const SPA_INDEX = path.join(FRONTEND_DIST, "index.html");
 
 const app = express();
 
+// Request logging
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    const ms = Date.now() - start;
+    console.log(`[http] ${req.method} ${req.originalUrl} ${res.statusCode} ${ms}ms`);
+  });
+  next();
+});
+
 // CORS — must include credentials for auth cookies
 app.use(
   cors({
@@ -103,9 +113,27 @@ async function start(): Promise<void> {
   await initDb();
   console.log("[db] Database initialized");
 
-  app.listen(config.port, () => {
+  const server = app.listen(config.port, () => {
     console.log(`Backend listening on port ${config.port}`);
   });
+
+  // Graceful shutdown — stop accepting connections and let the queue drain
+  function shutdown(signal: string) {
+    console.log(`\n[shutdown] Received ${signal}, shutting down gracefully...`);
+    server.close(() => {
+      console.log("[shutdown] HTTP server closed");
+      // Give the queue a moment to finish current work
+      const remaining = getQueueSize();
+      if (remaining > 0) {
+        console.log(`[shutdown] Waiting for ${remaining} queued job(s) to finish...`);
+      }
+      // p-queue will finish the current task; we exit after the server closes
+      process.exit(0);
+    });
+  }
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 start().catch((err) => {

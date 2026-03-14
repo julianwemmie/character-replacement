@@ -26,6 +26,10 @@ export function HomePage() {
   const navigate = useNavigate();
   const { data: session } = useSession();
 
+  useEffect(() => {
+    document.title = "Character Replacement";
+  }, []);
+
   // Video state
   const [videoTab, setVideoTab] = useState<VideoInputTab>("file");
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -173,7 +177,7 @@ export function HomePage() {
       }
 
       if (imageFile) {
-        formData.append("referenceImage", imageFile);
+        formData.append("image", imageFile);
       }
 
       const { job } = await api.jobs.create(formData);

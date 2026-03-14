@@ -86,6 +86,10 @@ export function ExplorePage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    document.title = "Explore - Character Replacement";
+  }, []);
+
+  useEffect(() => {
     api.explore
       .list()
       .then(({ jobs }) => setJobs(jobs))

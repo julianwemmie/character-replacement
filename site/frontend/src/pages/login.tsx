@@ -9,6 +9,10 @@ export function LoginPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    document.title = "Log In - Character Replacement";
+  }, []);
+
+  useEffect(() => {
     if (session?.user) {
       navigate("/dashboard", { replace: true });
     }

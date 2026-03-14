@@ -7,6 +7,7 @@ import { DashboardPage } from "@/pages/dashboard";
 import { JobStatusPage } from "@/pages/job-status";
 import { VideoViewerPage } from "@/pages/video-viewer";
 import { ExplorePage } from "@/pages/explore";
+import { NotFoundPage } from "@/pages/not-found";
 
 export function App() {
   return (
@@ -25,6 +26,7 @@ export function App() {
         <Route path="/jobs/:id" element={<JobStatusPage />} />
         <Route path="/videos/:id" element={<VideoViewerPage />} />
         <Route path="/explore" element={<ExplorePage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
     </Routes>
   );

@@ -41,6 +41,10 @@ export interface ListJobsResponse {
   jobs: Job[];
 }
 
+export interface GetMeResponse {
+  user: User;
+}
+
 export interface WebhookPayload {
   jobId: string;
   status: "done" | "failed";

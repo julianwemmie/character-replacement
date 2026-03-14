@@ -107,25 +107,27 @@ function SkeletonRow() {
 export function DashboardPage() {
   const { data: session } = useSession();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [generationCount, setGenerationCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.jobs
-      .list()
-      .then(({ jobs }) => {
-        const sorted = [...jobs].sort(
+    Promise.all([
+      api.jobs.list(),
+      api.me().catch(() => null),
+    ])
+      .then(([jobsRes, meRes]) => {
+        const sorted = [...jobsRes.jobs].sort(
           (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
         );
         setJobs(sorted);
+        if (meRes) setGenerationCount(meRes.user.generationCount);
       })
       .catch((err) =>
         setError(err instanceof Error ? err.message : "Failed to load jobs"),
       )
       .finally(() => setLoading(false));
   }, []);
-
-  const doneCount = jobs.filter((j) => j.status !== "failed").length;
 
   return (
     <div className="flex flex-col gap-6">
@@ -136,7 +138,7 @@ export function DashboardPage() {
           {session?.user && (
             <p className="mt-1 text-muted-foreground">
               {session.user.name ?? session.user.email} &middot;{" "}
-              {doneCount}/2 free generations used
+              {generationCount ?? 0}/2 free generations used
             </p>
           )}
         </div>

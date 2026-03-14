@@ -1,6 +1,7 @@
 import type {
   CreateJobResponse,
   GetJobResponse,
+  GetMeResponse,
   ListJobsResponse,
 } from "@character-replacement/shared";
 
@@ -31,6 +32,7 @@ function jsonRequest<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  me: () => jsonRequest<GetMeResponse>("/api/me"),
   jobs: {
     list: () => jsonRequest<ListJobsResponse>("/api/jobs"),
     get: (id: string) => jsonRequest<GetJobResponse>(`/api/jobs/${id}`),

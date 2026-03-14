@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Upload, X, Link as LinkIcon, Film, ImageIcon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { useSession, signIn } from "@/lib/auth-client";
 import { api, ApiError } from "@/lib/api";
 import type { JobMode } from "@character-replacement/shared";
+
+const MAX_FREE_GENERATIONS = 2;
 
 const MAX_VIDEO_DURATION = 15;
 const ACCEPTED_VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
@@ -37,6 +39,15 @@ export function HomePage() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Generation limit
+  const [generationCount, setGenerationCount] = useState<number | null>(null);
+  const limitReached = generationCount !== null && generationCount >= MAX_FREE_GENERATIONS;
+
+  useEffect(() => {
+    if (!session?.user) return;
+    api.me().then(({ user }) => setGenerationCount(user.generationCount)).catch(() => {});
+  }, [session?.user]);
 
   // Mode & submission
   const [mode, setMode] = useState<JobMode>("replace");
@@ -138,7 +149,7 @@ export function HomePage() {
   // ---- Submit ----
 
   const hasVideo = videoTab === "file" ? !!videoFile : videoUrl.trim().length > 0;
-  const canSubmit = hasVideo && !!imageFile && !submitting;
+  const canSubmit = hasVideo && !!imageFile && !submitting && !limitReached;
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -364,6 +375,18 @@ export function HomePage() {
             <p className="text-sm text-destructive">{submitError}</p>
           )}
 
+          {limitReached && (
+            <p className="text-center text-sm text-destructive">
+              You've used all {MAX_FREE_GENERATIONS} free generations. More coming soon!
+            </p>
+          )}
+
+          {session?.user && generationCount !== null && !limitReached && (
+            <p className="text-center text-xs text-muted-foreground">
+              {MAX_FREE_GENERATIONS - generationCount} of {MAX_FREE_GENERATIONS} free generations remaining
+            </p>
+          )}
+
           <Button
             disabled={!canSubmit}
             onClick={handleSubmit}
@@ -377,6 +400,8 @@ export function HomePage() {
               </>
             ) : !session?.user ? (
               "Sign in to Generate"
+            ) : limitReached ? (
+              "Limit Reached"
             ) : (
               "Generate"
             )}

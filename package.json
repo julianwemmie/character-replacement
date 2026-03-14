@@ -1,0 +1,7 @@
+{
+  "name": "character-replacement",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  }
+}

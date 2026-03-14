@@ -1,5 +1,4 @@
 import type {
-  CreateJobRequest,
   CreateJobResponse,
   GetJobResponse,
   ListJobsResponse,
@@ -16,10 +15,7 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    ...options,
-  });
+  const res = await fetch(path, options);
   if (!res.ok) {
     const body = await res.text().catch(() => "Unknown error");
     throw new ApiError(res.status, body);
@@ -27,15 +23,19 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+function jsonRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  return request<T>(path, {
+    ...options,
+    headers: { "Content-Type": "application/json", ...options?.headers },
+  });
+}
+
 export const api = {
   jobs: {
-    list: () => request<ListJobsResponse>("/api/jobs"),
-    get: (id: string) => request<GetJobResponse>(`/api/jobs/${id}`),
-    create: (data: CreateJobRequest) =>
-      request<CreateJobResponse>("/api/jobs", {
-        method: "POST",
-        body: JSON.stringify(data),
-      }),
+    list: () => jsonRequest<ListJobsResponse>("/api/jobs"),
+    get: (id: string) => jsonRequest<GetJobResponse>(`/api/jobs/${id}`),
+    create: (formData: FormData) =>
+      request<CreateJobResponse>("/api/jobs", { method: "POST", body: formData }),
   },
 };
 

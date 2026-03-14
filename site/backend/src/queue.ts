@@ -1,6 +1,7 @@
 import PQueue from "p-queue";
-import { updateJobStatus } from "./db.js";
+import { getJob, getUser, updateJobStatus } from "./db.js";
 import { config } from "./config.js";
+import { sendVideoReadyEmail, sendVideoFailedEmail } from "./services/email.js";
 import {
   downloadVideo,
   uploadLocalFile,
@@ -78,10 +79,36 @@ async function processJob(job: QueuedJob): Promise<void> {
     const outputUrl = buildOutputUrl(jobId);
     console.log(`[queue] Job ${jobId}: complete -> ${outputUrl}`);
     await updateJobStatus(jobId, "done", outputUrl);
+    await notifyUser(jobId, "done", outputUrl);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error(`[queue] Job ${jobId} failed:`, message);
     await updateJobStatus(jobId, "failed", undefined, message);
+    await notifyUser(jobId, "failed", undefined, message);
+  }
+}
+
+/** Look up the job owner and send the appropriate notification email. */
+export async function notifyUser(
+  jobId: string,
+  status: "done" | "failed",
+  outputUrl?: string,
+  error?: string,
+): Promise<void> {
+  try {
+    const job = await getJob(jobId);
+    if (!job) return;
+    const user = await getUser(job.userId);
+    if (!user?.email) return;
+
+    const name = user.name || "there";
+    if (status === "done") {
+      await sendVideoReadyEmail(user.email, name, jobId, outputUrl || "");
+    } else {
+      await sendVideoFailedEmail(user.email, name, jobId, error || "Unknown error");
+    }
+  } catch (err) {
+    console.error(`[queue] Failed to send notification for job ${jobId}:`, err);
   }
 }
 

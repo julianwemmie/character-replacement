@@ -4,6 +4,7 @@ import type {
   WebhookPayload,
 } from "@character-replacement/shared";
 import { setJobStatus, getJob } from "../store";
+import { sendJobCompleteEmail } from "../notifications";
 
 export const webhookRoutes = Router();
 
@@ -71,6 +72,9 @@ webhookRoutes.post("/modal", async (req, res) => {
       console.log(
         `[webhook] Job ${payload.job_id} completed: ${payload.output_url}`
       );
+
+      // Send email notification (fire-and-forget — errors are logged, not thrown)
+      sendJobCompleteEmail(payload.job_id, payload.output_url).catch(() => {});
     } else if (payload.status === "failed") {
       await setJobStatus(payload.job_id, "failed", {
         error: payload.error || "Processing failed",

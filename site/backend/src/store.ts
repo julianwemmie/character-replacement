@@ -57,29 +57,103 @@ export async function getJob(id: string): Promise<Job | undefined> {
   return rowToJob(result.rows[0] as unknown as JobRow);
 }
 
-export async function getAllJobs(userId?: string): Promise<Job[]> {
+export interface PaginatedResult<T> {
+  items: T[];
+  total: number;
+}
+
+export async function getAllJobs(
+  userId?: string,
+  options?: { status?: string; limit?: number; offset?: number }
+): Promise<PaginatedResult<Job>> {
+  const limit = options?.limit ?? 50;
+  const offset = options?.offset ?? 0;
+  const statusFilter = options?.status;
+
   if (!isTursoConfigured()) {
-    const all = Array.from(memoryJobs.values());
-    return all.sort(
+    let all = Array.from(memoryJobs.values());
+    all.sort(
       (a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
+    if (statusFilter) {
+      all = all.filter((j) => j.status === statusFilter);
+    }
+    const total = all.length;
+    return { items: all.slice(offset, offset + limit), total };
   }
 
   const client = getTursoClient()!;
-  let result;
+  const conditions: string[] = [];
+  const args: (string | number)[] = [];
+
   if (userId) {
-    result = await client.execute({
-      sql: "SELECT * FROM jobs WHERE user_id = ? ORDER BY created_at DESC",
-      args: [userId],
-    });
+    conditions.push("user_id = ?");
+    args.push(userId);
   } else {
-    result = await client.execute(
-      "SELECT * FROM jobs WHERE is_public = 1 ORDER BY created_at DESC"
-    );
+    conditions.push("is_public = 1");
   }
 
-  return result.rows.map((row) => rowToJob(row as unknown as JobRow));
+  if (statusFilter) {
+    conditions.push("status = ?");
+    args.push(statusFilter);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const countResult = await client.execute({
+    sql: `SELECT COUNT(*) as cnt FROM jobs ${where}`,
+    args,
+  });
+  const total = Number(countResult.rows[0]?.cnt ?? 0);
+
+  const dataResult = await client.execute({
+    sql: `SELECT * FROM jobs ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
+    args: [...args, limit, offset],
+  });
+
+  return {
+    items: dataResult.rows.map((row) => rowToJob(row as unknown as JobRow)),
+    total,
+  };
+}
+
+/**
+ * Get all public completed jobs (for explore/gallery page).
+ */
+export async function getPublicJobs(options?: {
+  limit?: number;
+  offset?: number;
+}): Promise<PaginatedResult<Job>> {
+  const limit = options?.limit ?? 20;
+  const offset = options?.offset ?? 0;
+
+  if (!isTursoConfigured()) {
+    const all = Array.from(memoryJobs.values())
+      .filter((j) => j.status === "done")
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+    return { items: all.slice(offset, offset + limit), total: all.length };
+  }
+
+  const client = getTursoClient()!;
+
+  const countResult = await client.execute(
+    "SELECT COUNT(*) as cnt FROM jobs WHERE status = 'done' AND is_public = 1"
+  );
+  const total = Number(countResult.rows[0]?.cnt ?? 0);
+
+  const dataResult = await client.execute({
+    sql: "SELECT * FROM jobs WHERE status = 'done' AND is_public = 1 ORDER BY created_at DESC LIMIT ? OFFSET ?",
+    args: [limit, offset],
+  });
+
+  return {
+    items: dataResult.rows.map((row) => rowToJob(row as unknown as JobRow)),
+    total,
+  };
 }
 
 export async function createJob(job: Job, userId?: string): Promise<void> {

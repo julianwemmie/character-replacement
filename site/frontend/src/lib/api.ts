@@ -1,4 +1,4 @@
-import type { Job, ApiResponse, CreateJobRequest, JobMode } from "@character-replacement/shared";
+import type { Job, ApiResponse, PaginatedApiResponse, CreateJobRequest, JobMode } from "@character-replacement/shared";
 
 const API_BASE = "/api";
 
@@ -86,8 +86,29 @@ export async function getJob(id: string): Promise<ApiResponse<Job>> {
   return request(`/jobs/${id}`);
 }
 
-export async function getJobs(): Promise<ApiResponse<Job[]>> {
-  return request("/jobs");
+export async function getJobs(params?: {
+  status?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<PaginatedApiResponse<Job>> {
+  const searchParams = new URLSearchParams();
+  if (params?.status) searchParams.set("status", params.status);
+  if (params?.limit !== undefined) searchParams.set("limit", String(params.limit));
+  if (params?.offset !== undefined) searchParams.set("offset", String(params.offset));
+  const qs = searchParams.toString();
+  return request(`/jobs${qs ? `?${qs}` : ""}`);
+}
+
+/** Fetch all public videos for the explore gallery */
+export async function getVideos(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<PaginatedApiResponse<Job>> {
+  const searchParams = new URLSearchParams();
+  if (params?.limit !== undefined) searchParams.set("limit", String(params.limit));
+  if (params?.offset !== undefined) searchParams.set("offset", String(params.offset));
+  const qs = searchParams.toString();
+  return request(`/videos${qs ? `?${qs}` : ""}`);
 }
 
 /** Fetch video info (public, no auth required) */

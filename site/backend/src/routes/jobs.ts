@@ -123,11 +123,20 @@ jobRoutes.post(
 /**
  * GET /api/jobs
  * List jobs — if authenticated, returns the user's jobs. Otherwise, public jobs only.
+ * Supports query params: ?status=done&limit=20&offset=0
  */
 jobRoutes.get("/", optionalAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    const jobs = await getAllJobs(req.userId);
-    const response: ApiResponse<Job[]> = { success: true, data: jobs };
+    const status = req.query.status as string | undefined;
+    const limit = req.query.limit ? Number(req.query.limit) : undefined;
+    const offset = req.query.offset ? Number(req.query.offset) : undefined;
+
+    const result = await getAllJobs(req.userId, { status, limit, offset });
+    const response = {
+      success: true,
+      data: result.items,
+      total: result.total,
+    };
     res.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

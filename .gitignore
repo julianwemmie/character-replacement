@@ -20,3 +20,9 @@ input/
 output/
 
 .env
+
+blog/
+blog-attachments/
+comparisons/
+preprocess_results_fixed/
+preprocess_results_old/

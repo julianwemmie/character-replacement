@@ -47,15 +47,16 @@ router.post(
         throw new AppError(400, "A reference image file is required");
       }
 
-      const resolvedVideoUrl = videoUrl || videoFile!.path;
-      const referenceImageUrl = imageFile.path;
+      const isVideoUrl = !!videoUrl;
+      const resolvedVideoSource = videoUrl || videoFile!.path;
+      const referenceImagePath = imageFile.path;
 
       const job = await createJob({
         id: uuidv4(),
         userId,
         mode,
-        videoUrl: resolvedVideoUrl,
-        referenceImageUrl,
+        videoUrl: resolvedVideoSource,
+        referenceImageUrl: referenceImagePath,
       });
 
       await incrementGenerationCount(userId);
@@ -63,8 +64,10 @@ router.post(
       // Enqueue for processing
       enqueueJob({
         jobId: job.id,
-        videoUrl: resolvedVideoUrl,
-        referenceImageUrl,
+        mode,
+        videoSource: resolvedVideoSource,
+        isVideoUrl,
+        referenceImagePath,
       });
 
       const response: CreateJobResponse = { job };

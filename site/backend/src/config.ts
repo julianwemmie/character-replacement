@@ -10,6 +10,7 @@ export const config = {
     tokenId: process.env.MODAL_TOKEN_ID || "",
     tokenSecret: process.env.MODAL_TOKEN_SECRET || "",
     appName: "wan-character-replacement",
+    serveEndpoint: process.env.MODAL_SERVE_ENDPOINT || "",
   },
   cors: {
     origin: process.env.CORS_ORIGIN || "http://localhost:5173",

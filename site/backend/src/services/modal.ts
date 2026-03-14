@@ -43,6 +43,10 @@ export function jobOutputPath(jobId: string): string {
   return `${jobDir(jobId)}/output.mp4`;
 }
 
+export function jobThumbnailPath(jobId: string): string {
+  return `${jobDir(jobId)}/output_thumb.jpg`;
+}
+
 // ---------------------------------------------------------------------------
 // Modal function wrappers
 // ---------------------------------------------------------------------------
@@ -134,10 +138,13 @@ export async function runInference(params: {
  * from the io volume. The path query param is relative to /root/io.
  */
 export function buildOutputUrl(jobId: string): string {
-  // Modal web endpoints follow the pattern:
-  // https://<workspace>--<app-name>-<function-name>.modal.run
-  // We store this base URL in config; fall back to a placeholder.
   const base = config.modal.serveEndpoint || "https://character-replacement-site-serve-file.modal.run";
   const relativePath = `jobs/${jobId}/output.mp4`;
+  return `${base}?path=${encodeURIComponent(relativePath)}`;
+}
+
+export function buildThumbnailUrl(jobId: string): string {
+  const base = config.modal.serveEndpoint || "https://character-replacement-site-serve-file.modal.run";
+  const relativePath = `jobs/${jobId}/output_thumb.jpg`;
   return `${base}?path=${encodeURIComponent(relativePath)}`;
 }

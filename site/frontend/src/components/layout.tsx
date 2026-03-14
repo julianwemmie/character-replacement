@@ -41,12 +41,18 @@ export function Layout() {
 
             {user ? (
               <div className="ml-2 flex items-center gap-2">
-                {user.image && (
+                {user.image ? (
                   <img
                     src={user.image}
                     alt={user.name ?? ""}
                     className="h-7 w-7 rounded-full"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => { e.currentTarget.style.display = "none"; }}
                   />
+                ) : (
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-medium text-primary-foreground">
+                    {(user.name ?? user.email)?.[0]?.toUpperCase() ?? "?"}
+                  </div>
                 )}
                 <span className="text-sm font-medium">
                   {user.name ?? user.email}

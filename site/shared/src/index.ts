@@ -10,6 +10,7 @@ export interface Job {
   videoUrl?: string;
   referenceImageUrl?: string;
   outputUrl?: string;
+  thumbnailUrl?: string;
   error?: string;
   createdAt: string;
   updatedAt: string;

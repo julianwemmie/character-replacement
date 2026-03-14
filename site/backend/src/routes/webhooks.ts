@@ -3,7 +3,6 @@ import type { WebhookPayload } from "@character-replacement/shared";
 import { getJob, updateJobStatus } from "../db.js";
 import { config } from "../config.js";
 import { AppError } from "../middleware/errorHandler.js";
-import { notifyUser } from "../queue.js";
 
 const router = Router();
 
@@ -40,7 +39,6 @@ router.post("/modal", async (req, res, next) => {
     }
 
     await updateJobStatus(jobId, status, outputUrl, error);
-    await notifyUser(jobId, status, outputUrl, error);
 
     res.json({ ok: true });
   } catch (error) {

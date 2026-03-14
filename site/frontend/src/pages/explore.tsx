@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Play } from "lucide-react";
 import type { Job } from "@character-replacement/shared";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,38 +16,25 @@ function formatDate(date: string): string {
 
 function VideoCard({ job }: { job: Job }) {
   const navigate = useNavigate();
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  function handleMouseEnter() {
-    videoRef.current?.play();
-  }
-
-  function handleMouseLeave() {
-    const video = videoRef.current;
-    if (!video) return;
-    video.pause();
-    video.currentTime = 0;
-  }
 
   return (
     <Card
       className="cursor-pointer transition-shadow hover:shadow-lg"
       onClick={() => navigate(`/videos/${job.id}`)}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
     >
       <CardContent className="p-0">
-        <div className="relative aspect-video overflow-hidden rounded-t-lg bg-muted">
-          {job.outputUrl ? (
-            <video
-              ref={videoRef}
-              src={job.outputUrl}
-              muted
-              loop
-              playsInline
-              preload="metadata"
-              className="h-full w-full object-cover"
-            />
+        <div className="relative aspect-video overflow-hidden rounded-t-lg bg-black">
+          {job.thumbnailUrl ? (
+            <>
+              <img
+                src={job.thumbnailUrl}
+                alt="Video thumbnail"
+                className="h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                <Play className="h-10 w-10 text-white/80" />
+              </div>
+            </>
           ) : (
             <div className="flex h-full items-center justify-center">
               <p className="text-sm text-muted-foreground">No preview</p>

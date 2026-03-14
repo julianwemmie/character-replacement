@@ -398,6 +398,22 @@ class InferenceRunner:
                     print(f"Audio mux failed: {mux_result.stderr}")
                     os.rename(tmp_file, save_file)
 
+            # Extract thumbnail from first frame
+            if os.path.exists(save_file):
+                thumb_path = save_file.rsplit(".", 1)[0] + "_thumb.jpg"
+                thumb_cmd = [
+                    "ffmpeg", "-y",
+                    "-i", save_file,
+                    "-vframes", "1",
+                    "-q:v", "2",
+                    thumb_path,
+                ]
+                thumb_result = subprocess.run(thumb_cmd, capture_output=True, text=True)
+                if thumb_result.returncode == 0:
+                    print(f"Thumbnail saved: {thumb_path}")
+                else:
+                    print(f"Thumbnail extraction failed: {thumb_result.stderr}")
+
             if os.path.exists(save_file):
                 size_mb = os.path.getsize(save_file) / (1024 * 1024)
                 print(f"\nOutput video: {save_file} ({size_mb:.1f} MB)")

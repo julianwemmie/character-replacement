@@ -18,3 +18,5 @@ node_modules/
 # Project
 input/
 output/
+
+.env

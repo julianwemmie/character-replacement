@@ -1,5 +1,5 @@
 import PQueue from "p-queue";
-import { getJob, getUser, updateJobStatus } from "./db.js";
+import { updateJobStatus } from "./db.js";
 import { config } from "./config.js";
 import { sendVideoReadyEmail, sendVideoFailedEmail } from "./services/email.js";
 import {
@@ -12,6 +12,7 @@ import {
   jobPreprocessPath,
   jobOutputPath,
   buildOutputUrl,
+  buildThumbnailUrl,
 } from "./services/modal.js";
 
 const jobQueue = new PQueue({ concurrency: 1 });
@@ -19,12 +20,11 @@ const jobQueue = new PQueue({ concurrency: 1 });
 export interface QueuedJob {
   jobId: string;
   mode: string;
-  /** URL to download video from (YouTube/TikTok/etc.), or local file path from upload. */
   videoSource: string;
-  /** Whether videoSource is a URL to download (true) or a local file path (false). */
   isVideoUrl: boolean;
-  /** Local file path for the uploaded reference image. */
   referenceImagePath: string;
+  userEmail?: string;
+  userName?: string;
 }
 
 export function enqueueJob(job: QueuedJob): void {
@@ -35,7 +35,6 @@ async function processJob(job: QueuedJob): Promise<void> {
   const { jobId, mode } = job;
 
   try {
-    // Step 1: Get video onto the Modal volume
     const remoteVideo = jobVideoPath(jobId);
     const remoteImage = jobImagePath(jobId);
 
@@ -47,11 +46,9 @@ async function processJob(job: QueuedJob): Promise<void> {
       await uploadLocalFile(job.videoSource, remoteVideo);
     }
 
-    // Step 2: Upload reference image
     console.log(`[queue] Job ${jobId}: uploading reference image`);
     await uploadLocalFile(job.referenceImagePath, remoteImage);
 
-    // Step 3: Preprocessing
     console.log(`[queue] Job ${jobId}: starting preprocessing`);
     await updateJobStatus(jobId, "preprocessing");
     await runPreprocess({
@@ -61,7 +58,6 @@ async function processJob(job: QueuedJob): Promise<void> {
       mode,
     });
 
-    // Step 4: Inference
     console.log(`[queue] Job ${jobId}: starting inference`);
     await updateJobStatus(jobId, "generating");
     const webhookUrl = `${config.auth.url}/api/webhooks/modal`;
@@ -75,42 +71,39 @@ async function processJob(job: QueuedJob): Promise<void> {
       webhookSecret: config.webhookSecret || undefined,
     });
 
-    // Step 5: Done
     const outputUrl = buildOutputUrl(jobId);
+    const thumbnailUrl = buildThumbnailUrl(jobId);
     console.log(`[queue] Job ${jobId}: complete -> ${outputUrl}`);
-    await updateJobStatus(jobId, "done", outputUrl);
-    await notifyUser(jobId, "done", outputUrl);
+    await updateJobStatus(jobId, "done", outputUrl, undefined, thumbnailUrl);
+    await notifyUser(job, "done", outputUrl);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error(`[queue] Job ${jobId} failed:`, message);
     await updateJobStatus(jobId, "failed", undefined, message);
-    await notifyUser(jobId, "failed", undefined, message);
+    await notifyUser(job, "failed", undefined, message);
   }
 }
 
-/** Look up the job owner and send the appropriate notification email. */
-export async function notifyUser(
-  jobId: string,
+async function notifyUser(
+  job: QueuedJob,
   status: "done" | "failed",
   outputUrl?: string,
   error?: string,
 ): Promise<void> {
   try {
-    const job = await getJob(jobId);
-    if (!job) return;
-    const user = await getUser(job.userId);
-    if (!user?.email) return;
-
-    const name = user.name || "there";
+    if (!job.userEmail) return;
+    const name = job.userName || "there";
     if (status === "done") {
-      await sendVideoReadyEmail(user.email, name, jobId, outputUrl || "");
+      await sendVideoReadyEmail(job.userEmail, name, job.jobId, outputUrl || "");
     } else {
-      await sendVideoFailedEmail(user.email, name, jobId, error || "Unknown error");
+      await sendVideoFailedEmail(job.userEmail, name, job.jobId, error || "Unknown error");
     }
   } catch (err) {
-    console.error(`[queue] Failed to send notification for job ${jobId}:`, err);
+    console.error(`[queue] Failed to send notification for job ${job.jobId}:`, err);
   }
 }
+
+export { notifyUser };
 
 export function getQueueSize(): number {
   return jobQueue.size + jobQueue.pending;

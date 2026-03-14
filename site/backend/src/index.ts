@@ -100,7 +100,7 @@ if (fs.existsSync(SPA_INDEX)) {
   app.use(express.static(FRONTEND_DIST));
 
   // SPA catch-all: any non-API route serves index.html
-  app.get("*", (_req, res) => {
+  app.get("*splat", (_req, res) => {
     res.sendFile(SPA_INDEX);
   });
 }

@@ -159,7 +159,7 @@ export function HomePage() {
     if (!canSubmit) return;
 
     if (!session?.user) {
-      await signIn.social({ provider: "google", callbackURL: "/" });
+      await signIn.social({ provider: "google", callbackURL: window.location.origin + "/" });
       return;
     }
 

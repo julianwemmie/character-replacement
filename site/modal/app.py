@@ -11,6 +11,8 @@ app = modal.App("character-replacement-site")
 
 io_volume = modal.Volume.from_name(IO_VOLUME_NAME, create_if_missing=True)
 
+web_image = modal.Image.debian_slim(python_version="3.11").pip_install("fastapi[standard]")
+
 ytdlp_image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("ffmpeg")
@@ -104,6 +106,7 @@ def download_video(url: str, dest_path: str) -> dict:
 
 
 @app.function(
+    image=web_image,
     volumes={IO_PATH: io_volume},
     timeout=60,
 )
@@ -147,6 +150,7 @@ def serve_file(path: str):
 
 
 @app.function(
+    image=web_image,
     volumes={IO_PATH: io_volume},
     timeout=300,
 )

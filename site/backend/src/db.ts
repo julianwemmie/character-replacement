@@ -1,5 +1,5 @@
 import { createClient, type Client } from "@libsql/client";
-import type { Job, JobMode, JobStatus, User } from "@character-replacement/shared";
+import type { Job, JobMode, JobStatus } from "@character-replacement/shared";
 import { config } from "./config.js";
 
 let db: Client;
@@ -18,14 +18,6 @@ export async function initDb(): Promise<void> {
   const client = getDb();
 
   await client.batch([
-    `CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT UNIQUE,
-      name TEXT,
-      avatar_url TEXT,
-      generation_count INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )`,
     `CREATE TABLE IF NOT EXISTS jobs (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
@@ -34,10 +26,11 @@ export async function initDb(): Promise<void> {
       video_url TEXT,
       reference_image_url TEXT,
       output_url TEXT,
+      thumbnail_url TEXT,
       error TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      FOREIGN KEY (user_id) REFERENCES users(id)
+      FOREIGN KEY (user_id) REFERENCES user(id)
     )`,
     `CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON jobs(user_id)`,
     `CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)`,
@@ -45,47 +38,15 @@ export async function initDb(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// User helpers
+// Generation count (derived from jobs table)
 // ---------------------------------------------------------------------------
 
-function rowToUser(row: Record<string, unknown>): User {
-  return {
-    id: row.id as string,
-    email: (row.email as string) || undefined,
-    name: (row.name as string) || undefined,
-    avatarUrl: (row.avatar_url as string) || undefined,
-    generationCount: (row.generation_count as number) ?? 0,
-    createdAt: row.created_at as string,
-  };
-}
-
-export async function getUser(id: string): Promise<User | null> {
-  const result = await getDb().execute({ sql: "SELECT * FROM users WHERE id = ?", args: [id] });
-  return result.rows.length > 0 ? rowToUser(result.rows[0]) : null;
-}
-
-export async function upsertUser(
-  id: string,
-  email?: string,
-  name?: string,
-  avatarUrl?: string,
-): Promise<void> {
-  await getDb().execute({
-    sql: `INSERT INTO users (id, email, name, avatar_url)
-          VALUES (?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET
-            email = COALESCE(excluded.email, users.email),
-            name = COALESCE(excluded.name, users.name),
-            avatar_url = COALESCE(excluded.avatar_url, users.avatar_url)`,
-    args: [id, email ?? null, name ?? null, avatarUrl ?? null],
-  });
-}
-
-export async function incrementGenerationCount(userId: string): Promise<void> {
-  await getDb().execute({
-    sql: "UPDATE users SET generation_count = generation_count + 1 WHERE id = ?",
+export async function getGenerationCount(userId: string): Promise<number> {
+  const result = await getDb().execute({
+    sql: "SELECT COUNT(*) as count FROM jobs WHERE user_id = ?",
     args: [userId],
   });
+  return (result.rows[0]?.count as number) ?? 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -101,6 +62,7 @@ function rowToJob(row: Record<string, unknown>): Job {
     videoUrl: (row.video_url as string) || undefined,
     referenceImageUrl: (row.reference_image_url as string) || undefined,
     outputUrl: (row.output_url as string) || undefined,
+    thumbnailUrl: (row.thumbnail_url as string) || undefined,
     error: (row.error as string) || undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
@@ -151,10 +113,11 @@ export async function updateJobStatus(
   status: JobStatus,
   outputUrl?: string,
   error?: string,
+  thumbnailUrl?: string,
 ): Promise<void> {
   await getDb().execute({
-    sql: `UPDATE jobs SET status = ?, output_url = COALESCE(?, output_url), error = COALESCE(?, error), updated_at = datetime('now') WHERE id = ?`,
-    args: [status, outputUrl ?? null, error ?? null, id],
+    sql: `UPDATE jobs SET status = ?, output_url = COALESCE(?, output_url), thumbnail_url = COALESCE(?, thumbnail_url), error = COALESCE(?, error), updated_at = datetime('now') WHERE id = ?`,
+    args: [status, outputUrl ?? null, thumbnailUrl ?? null, error ?? null, id],
   });
 }
 

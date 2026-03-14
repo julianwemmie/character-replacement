@@ -1,8 +1,7 @@
 import { Router } from "express";
 import type { GetMeResponse } from "@character-replacement/shared";
-import { getUser } from "../db.js";
+import { getGenerationCount } from "../db.js";
 import { authMiddleware } from "../middleware/auth.js";
-import { AppError } from "../middleware/errorHandler.js";
 
 const router = Router();
 
@@ -11,11 +10,17 @@ const router = Router();
  */
 router.get("/", authMiddleware, async (req, res, next) => {
   try {
-    const user = await getUser(req.userId!);
-    if (!user) {
-      throw new AppError(404, "User not found");
-    }
-    const response: GetMeResponse = { user };
+    const generationCount = await getGenerationCount(req.userId!);
+    const response: GetMeResponse = {
+      user: {
+        id: req.userId!,
+        email: req.userEmail,
+        name: req.userName,
+        avatarUrl: req.userImage,
+        generationCount,
+        createdAt: "",
+      },
+    };
     res.json(response);
   } catch (error) {
     next(error);

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { v4 as uuidv4 } from "uuid";
 import type { CreateJobResponse, GetJobResponse, JobMode, ListJobsResponse } from "@character-replacement/shared";
-import { getUser, getJob, getJobsByUser, createJob, incrementGenerationCount } from "../db.js";
+import { getGenerationCount, getJob, getJobsByUser, createJob } from "../db.js";
 import { config } from "../config.js";
 import { enqueueJob } from "../queue.js";
 import { authMiddleware } from "../middleware/auth.js";
@@ -27,8 +27,7 @@ router.post(
       const userId = req.userId!;
 
       // Rate limit check
-      const user = await getUser(userId);
-      const generationCount = user?.generationCount ?? 0;
+      const generationCount = await getGenerationCount(userId);
       if (generationCount >= config.rateLimit.maxFreeGenerations) {
         throw new AppError(429, "Free generation limit reached (max 2)");
       }
@@ -59,8 +58,6 @@ router.post(
         referenceImageUrl: referenceImagePath,
       });
 
-      await incrementGenerationCount(userId);
-
       // Enqueue for processing
       enqueueJob({
         jobId: job.id,
@@ -68,6 +65,8 @@ router.post(
         videoSource: resolvedVideoSource,
         isVideoUrl,
         referenceImagePath,
+        userEmail: req.userEmail,
+        userName: req.userName,
       });
 
       const response: CreateJobResponse = { job };

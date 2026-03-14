@@ -22,9 +22,23 @@ export async function authMiddleware(
     }
 
     req.userId = session.user.id;
+    req.userEmail = session.user.email;
+    req.userName = session.user.name ?? undefined;
+    req.userImage = session.user.image ?? undefined;
     next();
   } catch {
     res.status(401).json({ error: "Not authenticated" });
+  }
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      userId?: string;
+      userEmail?: string;
+      userName?: string;
+      userImage?: string;
+    }
   }
 }
 

@@ -1,9 +1,12 @@
-export type JobStatus = "pending" | "processing" | "completed" | "failed";
+export type JobStatus = "queued" | "preprocessing" | "generating" | "done" | "failed";
+
+export type JobMode = "replace" | "animate";
 
 export interface Job {
   id: string;
   userId: string;
   status: JobStatus;
+  mode: JobMode;
   videoUrl?: string;
   referenceImageUrl?: string;
   outputUrl?: string;
@@ -12,8 +15,18 @@ export interface Job {
   updatedAt: string;
 }
 
+export interface User {
+  id: string;
+  email?: string;
+  name?: string;
+  avatarUrl?: string;
+  generationCount: number;
+  createdAt: string;
+}
+
 export interface CreateJobRequest {
   videoUrl?: string;
+  mode?: JobMode;
 }
 
 export interface CreateJobResponse {
@@ -30,7 +43,7 @@ export interface ListJobsResponse {
 
 export interface WebhookPayload {
   jobId: string;
-  status: "completed" | "failed";
+  status: "done" | "failed";
   outputUrl?: string;
   error?: string;
 }

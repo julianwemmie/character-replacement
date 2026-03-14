@@ -6,6 +6,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { getQueueSize } from "./queue.js";
 import jobsRouter from "./routes/jobs.js";
 import webhooksRouter from "./routes/webhooks.js";
+import exploreRouter from "./routes/explore.js";
 import fs from "fs";
 
 const app = express();
@@ -31,6 +32,7 @@ app.get("/api/health", (_req, res) => {
 
 app.use("/api/jobs", jobsRouter);
 app.use("/api/webhooks", webhooksRouter);
+app.use("/api/explore", exploreRouter);
 
 // Error handling
 app.use(errorHandler);

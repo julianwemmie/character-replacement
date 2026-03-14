@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { getDb } from "../db.js";
+import { upsertUser } from "../db.js";
 
 /**
  * Auth middleware placeholder.
@@ -19,12 +19,8 @@ export async function authMiddleware(
     return;
   }
 
-  // Ensure user exists in the database (upsert — single query, race-safe)
-  const db = getDb();
-  await db.execute({
-    sql: "INSERT OR IGNORE INTO users (id) VALUES (?)",
-    args: [userId],
-  });
+  // Ensure user exists in the database (upsert -- race-safe)
+  await upsertUser(userId);
 
   req.userId = userId;
   next();

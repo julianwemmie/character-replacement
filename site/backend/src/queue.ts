@@ -1,5 +1,5 @@
 import PQueue from "p-queue";
-import { getDb } from "./db.js";
+import { updateJobStatus } from "./db.js";
 import { submitToModal } from "./services/modal.js";
 
 const jobQueue = new PQueue({ concurrency: 1 });
@@ -15,21 +15,13 @@ export function enqueueJob(job: QueuedJob): void {
 }
 
 async function processJob(job: QueuedJob): Promise<void> {
-  const db = getDb();
-
-  await db.execute({
-    sql: "UPDATE jobs SET status = 'processing', updated_at = datetime('now') WHERE id = ?",
-    args: [job.jobId],
-  });
+  await updateJobStatus(job.jobId, "preprocessing");
 
   try {
     await submitToModal(job);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
-    await db.execute({
-      sql: "UPDATE jobs SET status = 'failed', error = ?, updated_at = datetime('now') WHERE id = ?",
-      args: [message, job.jobId],
-    });
+    await updateJobStatus(job.jobId, "failed", undefined, message);
   }
 }
 

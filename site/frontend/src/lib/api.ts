@@ -37,6 +37,9 @@ export const api = {
     create: (formData: FormData) =>
       request<CreateJobResponse>("/api/jobs", { method: "POST", body: formData }),
   },
+  explore: {
+    list: () => jsonRequest<ListJobsResponse>("/api/explore"),
+  },
 };
 
 export { ApiError };

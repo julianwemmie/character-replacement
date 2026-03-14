@@ -1,10 +1,25 @@
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Layout } from "@/components/Layout";
+import { ExplorePage } from "@/pages/ExplorePage";
+import { LoginPage } from "@/pages/LoginPage";
+import { UploadPage } from "@/pages/UploadPage";
+import { JobStatusPage } from "@/pages/JobStatusPage";
+import { VideoPage } from "@/pages/VideoPage";
+import { HistoryPage } from "@/pages/HistoryPage";
+
 export function App() {
   return (
-    <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-      <div className="text-center space-y-4">
-        <h1 className="text-4xl font-bold">Character Replacement</h1>
-        <p className="text-muted-foreground">Upload a video and replace characters with AI.</p>
-      </div>
-    </div>
+    <BrowserRouter>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<ExplorePage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/upload" element={<UploadPage />} />
+          <Route path="/jobs/:jobId" element={<JobStatusPage />} />
+          <Route path="/videos/:videoId" element={<VideoPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   );
 }

@@ -5,6 +5,7 @@ const API_BASE = "/api";
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...options?.headers,
@@ -30,16 +31,4 @@ export async function getJob(id: string): Promise<ApiResponse<Job>> {
 
 export async function getJobs(): Promise<ApiResponse<Job[]>> {
   return request("/jobs");
-}
-
-export async function getMe(): Promise<ApiResponse<{ id: string; email: string; name: string }>> {
-  return request("/auth/me");
-}
-
-export function loginWithGoogle(): void {
-  window.location.href = `${API_BASE}/auth/google`;
-}
-
-export async function logout(): Promise<void> {
-  await request("/auth/logout", { method: "POST" });
 }

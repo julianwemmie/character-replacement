@@ -1,7 +1,7 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LogIn } from "lucide-react";
-import { loginWithGoogle } from "@/lib/api";
+import { signInWithGoogle } from "@/lib/auth";
 
 export function LoginPage() {
   return (
@@ -14,7 +14,7 @@ export function LoginPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4">
-          <Button onClick={loginWithGoogle} className="w-full gap-2">
+          <Button onClick={() => signInWithGoogle()} className="w-full gap-2">
             <LogIn className="h-4 w-4" />
             Sign in with Google
           </Button>

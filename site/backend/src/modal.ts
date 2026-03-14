@@ -34,7 +34,7 @@ export async function submitToModal(task: QueuedTask): Promise<void> {
   });
 
   // Update status to show we're sending to Modal
-  setJobStatus(task.jobId, "preprocessing", { progress: 20 });
+  await setJobStatus(task.jobId, "preprocessing", { progress: 20 });
 
   try {
     const response = await fetch(`${MODAL_API_URL}/process`, {
@@ -56,7 +56,7 @@ export async function submitToModal(task: QueuedTask): Promise<void> {
     }
 
     // Modal accepted the job; it will call back via webhook when done
-    setJobStatus(task.jobId, "generating", { progress: 30 });
+    await setJobStatus(task.jobId, "generating", { progress: 30 });
     console.log(`Job ${task.jobId} accepted by Modal`);
   } catch (err) {
     if (

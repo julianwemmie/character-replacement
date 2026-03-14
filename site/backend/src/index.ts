@@ -1,6 +1,9 @@
 import express from "express";
 import cors from "cors";
 import path from "path";
+import { toNodeHandler } from "better-auth/node";
+import { auth } from "./auth";
+import { initDatabase } from "./db-init";
 import { jobRoutes } from "./routes/jobs";
 import { webhookRoutes } from "./routes/webhooks";
 import type { ApiResponse } from "@character-replacement/shared";
@@ -8,8 +11,18 @@ import type { ApiResponse } from "@character-replacement/shared";
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Middleware
-app.use(cors());
+// CORS — allow credentials for session cookies
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    credentials: true,
+  })
+);
+
+// Better Auth handler — must come BEFORE express.json()
+app.all("/api/auth/*", toNodeHandler(auth));
+
+// Body parsing (after Better Auth routes)
 app.use(express.json());
 
 // API routes
@@ -67,6 +80,17 @@ app.use(
   }
 );
 
-app.listen(PORT, () => {
-  console.log(`Backend server running on port ${PORT}`);
-});
+// Initialize database, then start server
+initDatabase()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`Backend server running on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error("Failed to initialize database:", err);
+    // Start server anyway so health checks work
+    app.listen(PORT, () => {
+      console.log(`Backend server running on port ${PORT} (DB init failed)`);
+    });
+  });

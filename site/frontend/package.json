@@ -10,13 +10,14 @@
   },
   "dependencies": {
     "@character-replacement/shared": "*",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "better-auth": "^1.5.5",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
-    "tailwind-merge": "^2.6.0",
     "lucide-react": "^0.468.0",
-    "react-router-dom": "^7.0.0"
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.0.0",
+    "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",

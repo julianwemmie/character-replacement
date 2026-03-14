@@ -11,7 +11,7 @@ export const webhookRoutes = Router();
  * POST /api/webhooks/modal
  * Receive completion callback from Modal.
  */
-webhookRoutes.post("/modal", (req, res) => {
+webhookRoutes.post("/modal", async (req, res) => {
   try {
     const payload = req.body as WebhookPayload;
 
@@ -24,7 +24,7 @@ webhookRoutes.post("/modal", (req, res) => {
       return;
     }
 
-    const existing = getJob(payload.job_id);
+    const existing = await getJob(payload.job_id);
     if (!existing) {
       const response: ApiResponse<never> = {
         success: false,
@@ -35,13 +35,13 @@ webhookRoutes.post("/modal", (req, res) => {
     }
 
     if (payload.status === "done") {
-      setJobStatus(payload.job_id, "done", {
+      await setJobStatus(payload.job_id, "done", {
         progress: 100,
         outputUrl: payload.output_url,
       });
       console.log(`Job ${payload.job_id} completed: ${payload.output_url}`);
     } else if (payload.status === "failed") {
-      setJobStatus(payload.job_id, "failed", {
+      await setJobStatus(payload.job_id, "failed", {
         error: payload.error || "Processing failed",
       });
       console.error(`Job ${payload.job_id} failed: ${payload.error}`);

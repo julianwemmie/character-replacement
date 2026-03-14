@@ -20,12 +20,12 @@ export function enqueueJob(task: QueuedTask): void {
   queue
     .add(async () => {
       try {
-        setJobStatus(task.jobId, "preprocessing", { progress: 10 });
+        await setJobStatus(task.jobId, "preprocessing", { progress: 10 });
         await submitToModal(task);
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown error";
         console.error(`Job ${task.jobId} failed:`, message);
-        setJobStatus(task.jobId, "failed", { error: message });
+        await setJobStatus(task.jobId, "failed", { error: message });
       }
     })
     .catch((err) => {

@@ -113,7 +113,7 @@ async function start(): Promise<void> {
   await initDb();
   console.log("[db] Database initialized");
 
-  const server = app.listen(config.port, () => {
+  const server = app.listen(config.port, "0.0.0.0", () => {
     console.log(`Backend listening on port ${config.port}`);
   });
 
